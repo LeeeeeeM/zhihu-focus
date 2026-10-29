@@ -34,17 +34,30 @@ test('question answers follow the shared auto-load setting and stop on duplicate
   const { default: QuestionPage } = await import('../src/pages/QuestionPage');
   const oldQuestion = zhihuService.getQuestion;
   const oldAnswers = zhihuService.getQuestionAnswers;
+  const oldOpenContent = useZhihuStore.getState().openContent;
+  const opened: string[] = [];
   let requests = 0;
   zhihuService.getQuestion = async () => ({ id: '123', title: '问题', detail: '', author: '', createdAt: '', updatedAt: '', answerCount: 1, followerCount: 0, commentCount: 0, topics: [], url: '' });
   zhihuService.getQuestionAnswers = async () => {
     requests += 1;
     return { items: [{ id: '1', author: '作者', avatar: '', excerpt: '回答', createdAt: '', voteUpCount: 0, commentCount: 0 }], nextCursor: 'next', hasMore: true };
   };
-  useZhihuStore.setState({ autoLoad: true });
+  useZhihuStore.setState({ autoLoad: true, openContent: async (type, id) => { opened.push(`${type}:${id}`); } });
   const root = createRoot(dom.window.document.getElementById('root')!);
   try {
     await act(async () => { root.render(<MemoryRouter initialEntries={['/questions/123']}><Routes><Route path="/questions/:id" element={<QuestionPage/>}/></Routes></MemoryRouter>); });
     assert.equal(requests, 1);
+    const card = dom.window.document.querySelector<HTMLElement>('.question-answer-card')!;
+    const openButton = card.querySelector<HTMLButtonElement>('.question-answer-open')!;
+    const originalLink = card.querySelector<HTMLAnchorElement>('a')!;
+    assert.equal(originalLink.target, '_blank');
+    originalLink.addEventListener('click', event => event.preventDefault());
+    await act(async () => { originalLink.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true })); });
+    assert.deepEqual(opened, [], 'the original link does not open the answer drawer');
+    await act(async () => { openButton.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); });
+    await act(async () => { openButton.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
+    assert.deepEqual(opened, ['answer:1', 'answer:1']);
+    assert.doesNotMatch(card.textContent || '', /阅读回答与评论/);
     assert.match(dom.window.document.body.textContent || '', /继续加载回答/);
     Object.defineProperty(dom.window, 'scrollY', { value: 100, configurable: true });
     await act(async () => { dom.window.dispatchEvent(new dom.window.Event('scroll')); });
@@ -63,6 +76,7 @@ test('question answers follow the shared auto-load setting and stop on duplicate
     await act(async () => root.unmount());
     zhihuService.getQuestion = oldQuestion;
     zhihuService.getQuestionAnswers = oldAnswers;
+    useZhihuStore.setState({ openContent: oldOpenContent });
     for (const [key, descriptor] of previous) {
       if (descriptor) Object.defineProperty(globalThis, key, descriptor);
       else Reflect.deleteProperty(globalThis, key);

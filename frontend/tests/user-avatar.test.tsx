@@ -16,12 +16,14 @@ test('hidden avatars render 知 without an image source and can be restored', ()
     initial.hideUserAvatars = true;
     const hidden = renderToStaticMarkup(<UserAvatar src={src} name="作者" size={28}/>);
     assert.match(hidden, /知/);
+    assert.match(hidden, /font-size:13px/);
     assert.doesNotMatch(hidden, /example\.com|<img/);
     initial.hideUserAvatars = false;
     const visible = renderToStaticMarkup(<UserAvatar src={src} name="作者" size={28}/>);
     assert.match(visible, /example\.com\/avatar\.jpg/);
     const noImage = renderToStaticMarkup(<UserAvatar src="" name="作者" size={28}/>);
     assert.doesNotMatch(noImage, /<img|src=""/);
+    assert.match(noImage, /font-size:13px/);
   } finally { initial.hideUserAvatars = previous; }
 });
 

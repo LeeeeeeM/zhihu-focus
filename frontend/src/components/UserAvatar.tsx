@@ -6,6 +6,9 @@ export function UserAvatar({ src, name, size }: { src?: string; name?: string; s
   return <Avatar
     size={size}
     src={hidden ? undefined : src?.trim() || undefined}
-    style={hidden ? { backgroundColor: 'var(--theme-surface)', color: 'var(--theme-text)' } : undefined}
+    style={{
+      fontSize: Math.round(size * 0.48),
+      ...(hidden ? { backgroundColor: 'var(--theme-surface)', color: 'var(--theme-text)' } : {}),
+    }}
   >{hidden ? '知' : name?.slice(0, 1) || '知'}</Avatar>;
 }

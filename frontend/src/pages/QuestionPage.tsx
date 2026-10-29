@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Empty, Spin, Tag } from 'antd';
-import { ArrowRight, ExternalLink, MessageCircle, Users } from 'lucide-react';
+import { ExternalLink, MessageCircle, Users } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { useZhihuStore } from '../store/useZhihuStore';
 import { RichContent } from '../components/RichContent';
@@ -74,12 +74,12 @@ export default function QuestionPage() {
       {answersError && <div className="error-notice">{answersError}</div>}
       {answersLoading && answers.length === 0 ? <div className="loading-state"><Spin/><span>正在加载回答…</span></div> : answers.length
         ? <div className="question-answer-list">{answers.map((answer, index) => <article className="question-answer-card" key={answer.id}>
+          <button className="question-answer-open" type="button" aria-label={`阅读${answer.author || '知乎用户'}的回答与评论`} onClick={() => void openContent('answer', answer.id)}/>
           <div className="answer-index">{index + 1}</div>
           <div className="question-answer-main">
             <div className="question-answer-meta"><UserAvatar size={25} src={answer.avatar} name={answer.author}/><b>{answer.author || '知乎用户'}</b><span>{answer.createdAt}</span><span>{answer.voteUpCount.toLocaleString()} 赞同 · {answer.commentCount.toLocaleString()} 评论</span></div>
             <p>{answer.excerpt || '打开查看完整回答'}</p>
             <div className="question-answer-actions">
-              <Button type="link" onClick={() => void openContent('answer', answer.id)}>阅读回答与评论 <ArrowRight size={14}/></Button>
               <a href={`https://www.zhihu.com/answer/${answer.id}`} target="_blank" rel="noopener noreferrer">查看原文 <ExternalLink size={13}/></a>
             </div>
           </div>
