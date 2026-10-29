@@ -31,3 +31,9 @@ pnpm dev
 打开 Vite 输出的本机地址，默认 `http://127.0.0.1:5173`。同一局域网内的其他设备也可使用 Vite 输出的 Network 地址，例如 `http://电脑的局域网IP:5173`。macOS 可用 `ipconfig getifaddr en0` 查看 Wi-Fi 地址。前端 `/api` 请求代理到本机 Go 服务 `127.0.0.1:8787`，不需要单独把后端开放到局域网。
 
 不同地址和设备的浏览器各自保存 Cookie 和阅读设置。局域网开发地址使用 HTTP，请只在可信网络中使用；同一局域网能访问该地址的设备也能使用服务端配置的搜索兜底。凭证未配置或上游接口异常时，页面会显示错误，不会用演示数据代替。
+
+## 服务器部署
+
+在本机安装 Go、pnpm 和 Docker 后，执行 `./scripts/build-image.sh`，交叉编译 Linux AMD64 后端并构建前端 OpenResty 和后端镜像。脚本将前端构建到 `/zh/` 路径。通过 `docker save` / `docker load` 传输两个镜像，服务器使用 `compose.yaml` 启动；前后端仅在服务器回环地址监听 18788 和 18787。服务器已有的 HTTPS OpenResty 站点可引入 `deploy/openresty-zhijian.conf` 将 `/zh/` 转发到前端容器。
+
+可在服务器部署目录的 `.env` 中设置 `ZHIHU_ACCESS_SECRET`，不要将该文件加入镜像或提交仓库。该设置允许能访问网站的用户使用搜索兜底；应按使用范围配置站点访问控制。`/zh/` 与同域名的其他网站共用浏览器来源，应确保同域页面可信，以免其他脚本读取浏览器中保存的 Cookie。

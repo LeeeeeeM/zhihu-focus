@@ -1,0 +1,22 @@
+services:
+  backend:
+    image: zhihu-focus-backend:latest
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      ZHIFOCUS_ADDR: 127.0.0.1:18787
+      ZHIHU_ACCESS_SECRET: ${ZHIHU_ACCESS_SECRET:-}
+  frontend:
+    image: zhihu-focus-frontend:latest
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    network_mode: host
+    restart: unless-stopped
+    depends_on:
+      - backend

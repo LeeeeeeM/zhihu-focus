@@ -56,7 +56,9 @@ export default function App() {
           void state.refreshFeed();
           if (state.searchQuery) void state.search(state.searchQuery);
           if (state.drawerOpen && state.contentType && state.contentId) void state.openContent(state.contentType, state.contentId);
-          const questionId = /^\/questions\/(\d+)\/?$/.exec(window.location.pathname)?.[1];
+          const base = (import.meta.env?.BASE_URL || '/').replace(/\/$/, '');
+          const pathname = window.location.pathname;
+          const questionId = /^\/questions\/(\d+)\/?$/.exec(base && pathname.startsWith(`${base}/`) ? pathname.slice(base.length) : pathname)?.[1];
           if (questionId) void state.loadQuestion(questionId);
         }
       }

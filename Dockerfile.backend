@@ -1,0 +1,7 @@
+FROM scratch
+COPY .docker-build/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY .docker-build/zhihu-focus /zhihu-focus
+USER 10001:10001
+ENV ZHIFOCUS_ADDR=0.0.0.0:8787
+EXPOSE 8787
+ENTRYPOINT ["/zhihu-focus"]

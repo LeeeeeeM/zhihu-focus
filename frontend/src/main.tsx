@@ -16,7 +16,7 @@ function ThemedApp() {
   useLayoutEffect(() => {
     for (const [key, value] of Object.entries(palette)) document.documentElement.style.setProperty(`--theme-${key}`, value);
   }, [palette]);
-  return <ConfigProvider theme={theme}><BrowserRouter><App/></BrowserRouter></ConfigProvider>;
+  return <ConfigProvider theme={theme}><BrowserRouter basename={import.meta.env.BASE_URL}><App/></BrowserRouter></ConfigProvider>;
 }
 
 createRoot(document.getElementById('root')!).render(<React.StrictMode><ThemedApp/></React.StrictMode>);

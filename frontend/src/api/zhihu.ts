@@ -10,7 +10,8 @@ async function request<T>(path: string, init?: RequestInit, identity = ''): Prom
   if (pending) return pending as Promise<T>;
 
   const task = (async () => {
-    const res = await fetch(path, init);
+    const base = import.meta.env?.BASE_URL || '/';
+    const res = await fetch(`${base.replace(/\/$/, '')}${path}`, init);
     if (!res.ok) {
       let detail = '';
       try { detail = (await res.json()).error || ''; } catch { /* Keep the status fallback. */ }
