@@ -1,6 +1,6 @@
 # 知简 Zhihu Focus
 
-本地知乎阅读器，只提供推荐流和搜索。`frontend/` 为 React + Vite，`backend/` 为 Go API + Air。
+本地知乎阅读器，只提供推荐流和搜索。`frontend/` 为 React + Vite，`backend/` 为 Go API + Air，Go 最低版本为 1.27.3。
 
 ## 配置真实知乎服务
 
