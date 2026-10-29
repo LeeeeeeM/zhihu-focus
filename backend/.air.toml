@@ -1,0 +1,23 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/zhihu-focus-server ./server"
+  entrypoint = ["./tmp/zhihu-focus-server"]
+  include_ext = ["go"]
+  exclude_dir = ["tmp", "node_modules", "dist", ".git"]
+  exclude_regex = ["_test.go"]
+  delay = 700
+  kill_delay = "1s"
+  log = "tmp/air-build-errors.log"
+
+[color]
+  build = "yellow"
+  runner = "green"
+  watcher = "cyan"
+
+[log]
+  time = true
+
+[misc]
+  clean_on_exit = true
