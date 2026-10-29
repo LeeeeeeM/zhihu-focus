@@ -1,6 +1,6 @@
-import { Avatar } from 'antd';
 import { ExternalLink } from 'lucide-react';
 import type { ContentOpenType, FeedItem, SearchResult } from '../models/content';
+import { UserAvatar } from './UserAvatar';
 
 type ReadableContent = { type: ContentOpenType; id: string };
 type CardFooterProps = {
@@ -36,7 +36,7 @@ function contentKindLabel(kind: string) {
 function CardFooter({ author, avatar, stats, url, hasDetail }: CardFooterProps) {
   return <div className="card-footer">
     <div className="author">
-      <Avatar size={22} src={avatar}>{author?.slice(0, 1) || '知'}</Avatar>
+      <UserAvatar size={22} src={avatar} name={author}/>
       <b>{author || '知乎用户'}</b>
       <span>{stats}</span>
     </div>

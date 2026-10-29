@@ -1,12 +1,15 @@
-import { Avatar, Button, Drawer, Empty, Spin, Typography } from 'antd';
+import { Button, Drawer, Empty, Spin, Typography } from 'antd';
 import { ArrowRight, ExternalLink } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useZhihuStore } from '../store/useZhihuStore';
 import type { CommentItem } from '../models/content';
+import { RichContent } from './RichContent';
+import { UserAvatar } from './UserAvatar';
 
-const { Paragraph, Title } = Typography;
+const { Title } = Typography;
 
 export function ContentDrawer() {
+  const minimalMode = useZhihuStore(state => state.minimalMode);
   const open = useZhihuStore(state => state.drawerOpen);
   const type = useZhihuStore(state => state.contentType);
   const contentId = useZhihuStore(state => state.contentId);
@@ -22,7 +25,7 @@ export function ContentDrawer() {
   const closeDrawer = useZhihuStore(state => state.closeDrawer);
   const loadMoreComments = useZhihuStore(state => state.loadMoreComments);
   return <Drawer
-    className="content-drawer"
+    className={`content-drawer ${minimalMode ? 'minimal-drawer' : ''}`}
     title={type === 'article' ? '文章详情' : '回答详情'}
     placement="right"
     size="min(720px, 100vw)"
@@ -39,8 +42,8 @@ export function ContentDrawer() {
         {type === 'answer' && detail.questionId
           ? <Link className="question-title-button" to={`/questions/${detail.questionId}`} target="_blank" rel="noopener noreferrer"><span>{detail.title}</span><small>查看问题与其他回答 <ArrowRight size={14}/></small></Link>
           : <Title level={2}>{detail.title}</Title>}
-        <div className="reader-byline"><Avatar size={28} src={detail.avatar}>{detail.author?.slice(0, 1) || '知'}</Avatar><b>{detail.author || '知乎用户'}</b><span>{detail.createdAt}</span><span>{detail.voteUpCount.toLocaleString()} 赞同</span></div>
-        <div className="reader-body">{detail.content}</div>
+        <div className="reader-byline"><UserAvatar size={28} src={detail.avatar} name={detail.author}/><b>{detail.author || '知乎用户'}</b><span>{detail.createdAt}</span><span>{detail.voteUpCount.toLocaleString()} 赞同</span></div>
+        <RichContent className="reader-body" html={detail.contentHtml} text={detail.content}/>
         <a className="source-link" href={detail.url} target="_blank" rel="noopener noreferrer">在知乎打开原文 <ExternalLink size={14}/></a>
       </article>}
       {!detail && !detailLoading && !detailError && <Empty className="drawer-empty" description="暂时无法读取内容"/>}
@@ -66,11 +69,11 @@ function Comment({ item }: { item: CommentItem }) {
   const canLoadReplies = item.repliesHasMore || remainingReplies > 0;
 
   return <article className="comment">
-    <Avatar size={26} src={item.avatar}>{item.author?.slice(0, 1) || '知'}</Avatar>
+    <UserAvatar size={26} src={item.avatar} name={item.author}/>
     <div className="comment-main"><div className="comment-meta"><b>{item.author || '知乎用户'}</b><span>{item.createdAt}</span></div>
-      <Paragraph className="comment-text">{item.content}</Paragraph>
+      <RichContent className="comment-text" html={item.contentHtml} text={item.content}/>
       <div className="comment-stats">{item.likeCount.toLocaleString()} 赞同{item.replyCount ? ` · ${item.replyCount} 条回复` : ''}</div>
-      {replies.map(reply => <div className="comment-reply" key={reply.id}><b>{reply.author || '知乎用户'}</b><p>{reply.content}</p><span>{reply.createdAt}</span></div>)}
+      {replies.map(reply => <div className="comment-reply" key={reply.id}><b>{reply.author || '知乎用户'}</b><RichContent className="comment-reply-text" html={reply.contentHtml} text={reply.content}/><span>{reply.createdAt}</span></div>)}
       {canLoadReplies && <div className="comment-replies-action"><Button type="link" size="small" onClick={() => void loadCommentReplies(item.id)} loading={isLoadingReplies}>
         {replies.length ? (remainingReplies ? `加载剩余 ${remainingReplies} 条回复` : '继续加载回复') : `查看 ${item.replyCount} 条回复`}
       </Button></div>}

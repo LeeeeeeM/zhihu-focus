@@ -1,13 +1,16 @@
 import type { ThemeConfig } from 'antd';
+import { createThemePalette } from '../services/themePreferences';
 
-// Keep Ant Design controls on the same moss-green and warm-neutral palette as the reader UI.
-export const zhihuAntdTheme: ThemeConfig = {
+export function createAntdTheme(color: string): ThemeConfig {
+  const palette = createThemePalette(color);
+  return {
   token: {
-    colorPrimary: '#315f4b',
-    colorInfo: '#315f4b',
-    colorLink: '#66806b',
-    colorLinkHover: '#315f4b',
-    colorLinkActive: '#254a3a',
+    colorPrimary: palette.primary,
+    colorInfo: palette.primary,
+    colorLink: palette.text,
+    colorLinkHover: palette.text,
+    colorLinkActive: palette.text,
+    colorTextLightSolid: palette.onPrimary,
     colorBgLayout: '#f8f8f6',
     colorBgContainer: '#ffffff',
     colorBgElevated: '#ffffff',
@@ -17,7 +20,7 @@ export const zhihuAntdTheme: ThemeConfig = {
     colorBorder: '#e7e8e2',
     colorBorderSecondary: '#ecece8',
     colorFillSecondary: '#f1f2ee',
-    controlOutline: 'rgba(49, 95, 75, 0.16)',
+    controlOutline: `${palette.primary}29`,
     borderRadius: 8,
     fontFamily: "'DM Sans', 'Noto Sans SC', sans-serif",
   },
@@ -27,9 +30,10 @@ export const zhihuAntdTheme: ThemeConfig = {
       defaultShadow: 'none',
     },
     Input: {
-      activeBorderColor: '#78927b',
-      hoverBorderColor: '#a4b1a0',
-      activeShadow: '0 0 0 2px rgba(49, 95, 75, 0.12)',
+      activeBorderColor: palette.border,
+      hoverBorderColor: palette.border,
+      activeShadow: `0 0 0 2px ${palette.primary}1f`,
     },
   },
-};
+  };
+}

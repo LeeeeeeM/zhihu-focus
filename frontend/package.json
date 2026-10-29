@@ -4,14 +4,22 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
+    "dev": "vite",
     "typecheck": "tsc -p tsconfig.json",
+    "test:rich-content": "tsx --test tests/rich-content.test.ts",
+    "test:theme": "tsx --test tests/theme.test.ts",
+    "test:avatar": "tsx --test tests/user-avatar.test.tsx",
+    "test:store": "tsx --test tests/store.test.ts",
+    "test:question-pagination": "tsx --test tests/question-pagination.test.tsx",
+    "test:app-preferences": "tsx --test tests/app-preferences.test.tsx",
+    "test:settings": "tsx --test tests/settings-page.test.tsx",
     "build": "pnpm typecheck && vite build",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
     "antd": "^6.6.8",
+    "dompurify": "^3.4.17",
     "lucide-react": "^0.468.0",
     "react": "latest",
     "react-dom": "latest",
@@ -22,6 +30,8 @@
   },
   "devDependencies": {
     "@types/react": "^19.3.0",
-    "@types/react-dom": "^19.3.0"
+    "@types/react-dom": "^19.3.0",
+    "jsdom": "^30.1.3",
+    "tsx": "^4.23.15"
   }
 }

@@ -2,6 +2,10 @@ const zhihuCookieKey = 'zhihu-focus-cookie';
 const legacySearchCookieKey = 'zhihu-focus-search-cookie';
 export const zhihuCookieChangedEvent = 'zhihu-focus-cookie-changed';
 
+export function isZhihuCookieStorageKey(key: string | null): boolean {
+  return key === null || key === zhihuCookieKey || key === legacySearchCookieKey;
+}
+
 export function readZhihuCookie() {
   try { return window.localStorage.getItem(zhihuCookieKey) || window.localStorage.getItem(legacySearchCookieKey) || ''; } catch { return ''; }
 }

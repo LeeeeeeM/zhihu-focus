@@ -59,6 +59,7 @@ type ContentDetail struct {
 	QuestionID   string `json:"questionId,omitempty"`
 	Title        string `json:"title"`
 	Content      string `json:"content"`
+	ContentHTML  string `json:"contentHtml,omitempty"`
 	Author       string `json:"author"`
 	Avatar       string `json:"avatar"`
 	CreatedAt    string `json:"createdAt"`
@@ -70,6 +71,7 @@ type QuestionInfo struct {
 	ID            string   `json:"id"`
 	Title         string   `json:"title"`
 	Detail        string   `json:"detail"`
+	DetailHTML    string   `json:"detailHtml,omitempty"`
 	Author        string   `json:"author"`
 	CreatedAt     string   `json:"createdAt"`
 	UpdatedAt     string   `json:"updatedAt"`
@@ -96,6 +98,7 @@ type QuestionAnswerPage struct {
 type Comment struct {
 	ID             string    `json:"id"`
 	Content        string    `json:"content"`
+	ContentHTML    string    `json:"contentHtml,omitempty"`
 	Author         string    `json:"author"`
 	Avatar         string    `json:"avatar"`
 	CreatedAt      string    `json:"createdAt"`
@@ -112,8 +115,19 @@ type CommentPage struct {
 }
 type Config struct {
 	AccessSecret string
-	Cookie       string
 }
+
+type apiStatusError struct {
+	status  int
+	message string
+}
+
+func (e *apiStatusError) Error() string { return e.message }
+
+func newAPIStatusError(status int, message string) error {
+	return &apiStatusError{status: status, message: message}
+}
+
 type APIEnvelope struct {
 	Code    int    `json:"Code"`
 	Message string `json:"Message"`
@@ -223,10 +237,10 @@ func main() {
 	client := &http.Client{Timeout: 20 * time.Second}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "configured": map[string]bool{"search": cfg.AccessSecret != "", "recommendation": cfg.Cookie != ""}})
+		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "configured": map[string]bool{"search": cfg.AccessSecret != ""}})
 	})
 	mux.HandleFunc("GET /api/feed", func(w http.ResponseWriter, r *http.Request) {
-		cookie := requestZhihuCookie(r, cfg.Cookie)
+		cookie := requestZhihuCookie(r)
 		var page FeedPage
 		var err error
 		if cookie == "" {
@@ -267,9 +281,9 @@ func main() {
 		writeJSON(w, http.StatusOK, page)
 	})
 	mux.HandleFunc("GET /api/detail", func(w http.ResponseWriter, r *http.Request) {
-		cookie := requestZhihuCookie(r, cfg.Cookie)
+		cookie := requestZhihuCookie(r)
 		if cookie == "" {
-			apiError(w, errors.New("读取详情需要在知简设置中配置知乎 Cookie"))
+			apiError(w, newAPIStatusError(http.StatusUnauthorized, "读取详情需要在知简设置中配置知乎 Cookie"))
 			return
 		}
 		contentType := r.URL.Query().Get("type")
@@ -286,7 +300,7 @@ func main() {
 		case "article":
 			item, err = getArticleDetail(r.Context(), client, cookie, id)
 		default:
-			apiError(w, errors.New("不支持的知乎内容类型"))
+			apiError(w, newAPIStatusError(http.StatusBadRequest, "不支持的知乎内容类型"))
 			return
 		}
 		if err != nil {
@@ -296,9 +310,9 @@ func main() {
 		writeJSON(w, http.StatusOK, item)
 	})
 	mux.HandleFunc("GET /api/comments", func(w http.ResponseWriter, r *http.Request) {
-		cookie := requestZhihuCookie(r, cfg.Cookie)
+		cookie := requestZhihuCookie(r)
 		if cookie == "" {
-			apiError(w, errors.New("读取评论需要在知简设置中配置知乎 Cookie"))
+			apiError(w, newAPIStatusError(http.StatusUnauthorized, "读取评论需要在知简设置中配置知乎 Cookie"))
 			return
 		}
 		contentType := r.URL.Query().Get("type")
@@ -315,7 +329,7 @@ func main() {
 		case "article":
 			page, err = getArticleComments(r.Context(), client, cookie, id, r.URL.Query().Get("cursor"))
 		default:
-			apiError(w, errors.New("不支持的知乎内容类型"))
+			apiError(w, newAPIStatusError(http.StatusBadRequest, "不支持的知乎内容类型"))
 			return
 		}
 		if err != nil {
@@ -325,9 +339,9 @@ func main() {
 		writeJSON(w, http.StatusOK, page)
 	})
 	mux.HandleFunc("GET /api/question", func(w http.ResponseWriter, r *http.Request) {
-		cookie := requestZhihuCookie(r, cfg.Cookie)
+		cookie := requestZhihuCookie(r)
 		if cookie == "" {
-			apiError(w, errors.New("读取问题需要在知简设置中配置知乎 Cookie"))
+			apiError(w, newAPIStatusError(http.StatusUnauthorized, "读取问题需要在知简设置中配置知乎 Cookie"))
 			return
 		}
 		id := r.URL.Query().Get("id")
@@ -343,9 +357,9 @@ func main() {
 		writeJSON(w, http.StatusOK, question)
 	})
 	mux.HandleFunc("GET /api/question/answers", func(w http.ResponseWriter, r *http.Request) {
-		cookie := requestZhihuCookie(r, cfg.Cookie)
+		cookie := requestZhihuCookie(r)
 		if cookie == "" {
-			apiError(w, errors.New("读取问题回答需要在知简设置中配置知乎 Cookie"))
+			apiError(w, newAPIStatusError(http.StatusUnauthorized, "读取问题回答需要在知简设置中配置知乎 Cookie"))
 			return
 		}
 		id := r.URL.Query().Get("id")
@@ -361,9 +375,9 @@ func main() {
 		writeJSON(w, http.StatusOK, page)
 	})
 	mux.HandleFunc("GET /api/comment-replies", func(w http.ResponseWriter, r *http.Request) {
-		cookie := requestZhihuCookie(r, cfg.Cookie)
+		cookie := requestZhihuCookie(r)
 		if cookie == "" {
-			apiError(w, errors.New("读取评论回复需要在知简设置中配置知乎 Cookie"))
+			apiError(w, newAPIStatusError(http.StatusUnauthorized, "读取评论回复需要在知简设置中配置知乎 Cookie"))
 			return
 		}
 		contentType := r.URL.Query().Get("type")
@@ -399,7 +413,7 @@ func getAnswerDetail(ctx context.Context, client *http.Client, cookie, id string
 		return ContentDetail{}, fmt.Errorf("无法解析回答详情：%w", err)
 	}
 	link := "https://www.zhihu.com/answer/" + id
-	return ContentDetail{ID: id, QuestionID: rawID(raw.Question.ID), Title: raw.Question.Title, Content: plainText(raw.Content), Author: raw.Author.Name, Avatar: raw.Author.Avatar, CreatedAt: formatUnix(raw.CreatedTime), VoteUpCount: raw.VoteUpCount, CommentCount: raw.CommentCount, URL: link}, nil
+	return ContentDetail{ID: id, QuestionID: rawID(raw.Question.ID), Title: raw.Question.Title, Content: plainText(raw.Content), ContentHTML: raw.Content, Author: raw.Author.Name, Avatar: raw.Author.Avatar, CreatedAt: formatUnix(raw.CreatedTime), VoteUpCount: raw.VoteUpCount, CommentCount: raw.CommentCount, URL: link}, nil
 }
 
 func getQuestionDetail(ctx context.Context, client *http.Client, cookie, id string) (QuestionInfo, error) {
@@ -423,7 +437,7 @@ func getQuestionDetail(ctx context.Context, client *http.Client, cookie, id stri
 			topics = append(topics, topic.Name)
 		}
 	}
-	return QuestionInfo{ID: id, Title: raw.Title, Detail: plainText(detail), Author: raw.Author.Name, CreatedAt: formatUnix(raw.Created), UpdatedAt: formatUnix(raw.UpdatedTime), AnswerCount: raw.AnswerCount, FollowerCount: raw.FollowerCount, CommentCount: raw.CommentCount, Topics: topics, URL: webURL}, nil
+	return QuestionInfo{ID: id, Title: raw.Title, Detail: plainText(detail), DetailHTML: detail, Author: raw.Author.Name, CreatedAt: formatUnix(raw.Created), UpdatedAt: formatUnix(raw.UpdatedTime), AnswerCount: raw.AnswerCount, FollowerCount: raw.FollowerCount, CommentCount: raw.CommentCount, Topics: topics, URL: webURL}, nil
 }
 
 func getQuestionAnswers(ctx context.Context, client *http.Client, cookie, id, cursor string) (QuestionAnswerPage, error) {
@@ -432,7 +446,7 @@ func getQuestionAnswers(ctx context.Context, client *http.Client, cookie, id, cu
 	if cursor != "" {
 		parsed, err := url.Parse(cursor)
 		if err != nil || parsed.Scheme != "https" || parsed.Host != "www.zhihu.com" || parsed.Path != basePath {
-			return QuestionAnswerPage{}, errors.New("知乎返回了无效的问题回答分页地址")
+			return QuestionAnswerPage{}, newAPIStatusError(http.StatusBadRequest, "知乎返回了无效的问题回答分页地址")
 		}
 		u = parsed.String()
 	}
@@ -475,7 +489,7 @@ func getArticleDetail(ctx context.Context, client *http.Client, cookie, id strin
 	if err = json.Unmarshal(b, &raw); err != nil {
 		return ContentDetail{}, fmt.Errorf("无法解析文章详情：%w", err)
 	}
-	return ContentDetail{ID: id, Title: raw.Title, Content: plainText(raw.Content), Author: raw.Author.Name, Avatar: raw.Author.Avatar, CreatedAt: formatUnix(raw.Created), VoteUpCount: raw.VoteUpCount, CommentCount: raw.CommentCount, URL: webURL}, nil
+	return ContentDetail{ID: id, Title: raw.Title, Content: plainText(raw.Content), ContentHTML: raw.Content, Author: raw.Author.Name, Avatar: raw.Author.Avatar, CreatedAt: formatUnix(raw.Created), VoteUpCount: raw.VoteUpCount, CommentCount: raw.CommentCount, URL: webURL}, nil
 }
 
 func getAnswerComments(ctx context.Context, client *http.Client, cookie, id, cursor string) (CommentPage, error) {
@@ -484,7 +498,7 @@ func getAnswerComments(ctx context.Context, client *http.Client, cookie, id, cur
 	if cursor != "" {
 		parsed, err := url.Parse(cursor)
 		if err != nil || parsed.Scheme != "https" || parsed.Host != "www.zhihu.com" || parsed.Path != basePath {
-			return CommentPage{}, errors.New("知乎返回了无效的评论分页地址")
+			return CommentPage{}, newAPIStatusError(http.StatusBadRequest, "知乎返回了无效的评论分页地址")
 		}
 		u = parsed.String()
 	}
@@ -505,7 +519,7 @@ func getArticleComments(ctx context.Context, client *http.Client, cookie, id, cu
 	if cursor != "" {
 		parsed, err := url.Parse(cursor)
 		if err != nil || parsed.Scheme != "https" || parsed.Host != "www.zhihu.com" || parsed.Path != basePath {
-			return CommentPage{}, errors.New("知乎返回了无效的文章评论分页地址")
+			return CommentPage{}, newAPIStatusError(http.StatusBadRequest, "知乎返回了无效的文章评论分页地址")
 		}
 		u = parsed.String()
 	}
@@ -527,9 +541,9 @@ func commentPageFromResponse(raw commentsResponse) CommentPage {
 		if replyCount == 0 {
 			replyCount = c.RepliesCount
 		}
-		item := Comment{ID: rawID(c.ID), Content: plainText(c.Content), Author: c.Author.Member.Name, Avatar: c.Author.Member.Avatar, CreatedAt: formatUnix(c.CreatedTime), LikeCount: c.VoteCount, ReplyCount: replyCount}
+		item := Comment{ID: rawID(c.ID), Content: plainText(c.Content), ContentHTML: c.Content, Author: c.Author.Member.Name, Avatar: c.Author.Member.Avatar, CreatedAt: formatUnix(c.CreatedTime), LikeCount: c.VoteCount, ReplyCount: replyCount}
 		for _, reply := range c.ChildComments {
-			item.Replies = append(item.Replies, Comment{ID: rawID(reply.ID), Content: plainText(reply.Content), Author: reply.Author.Member.Name, Avatar: reply.Author.Member.Avatar, CreatedAt: formatUnix(reply.CreatedTime), LikeCount: reply.VoteCount})
+			item.Replies = append(item.Replies, Comment{ID: rawID(reply.ID), Content: plainText(reply.Content), ContentHTML: reply.Content, Author: reply.Author.Member.Name, Avatar: reply.Author.Member.Avatar, CreatedAt: formatUnix(reply.CreatedTime), LikeCount: reply.VoteCount})
 		}
 		item.RepliesHasMore = item.ReplyCount > len(item.Replies)
 		out = append(out, item)
@@ -543,7 +557,7 @@ func getCommentReplies(ctx context.Context, client *http.Client, cookie, content
 	if cursor != "" {
 		parsed, err := url.Parse(cursor)
 		if err != nil || parsed.Scheme != "https" || parsed.Host != "www.zhihu.com" || parsed.Path != basePath {
-			return CommentPage{}, errors.New("知乎返回了无效的子评论分页地址")
+			return CommentPage{}, newAPIStatusError(http.StatusBadRequest, "知乎返回了无效的子评论分页地址")
 		}
 		u = parsed.String()
 	}
@@ -620,7 +634,7 @@ func validID(v string) bool {
 	return true
 }
 func loadConfig() Config {
-	c := Config{AccessSecret: os.Getenv("ZHIHU_ACCESS_SECRET"), Cookie: os.Getenv("ZHIHU_COOKIE")}
+	c := Config{AccessSecret: os.Getenv("ZHIHU_ACCESS_SECRET")}
 	p := filepath.Join(".", ".env")
 	b, err := os.ReadFile(p)
 	if err != nil {
@@ -642,10 +656,6 @@ func loadConfig() Config {
 			if c.AccessSecret == "" {
 				c.AccessSecret = v
 			}
-		case "ZHIHU_COOKIE":
-			if c.Cookie == "" {
-				c.Cookie = v
-			}
 		}
 	}
 	return c
@@ -655,7 +665,7 @@ func getFeed(ctx context.Context, client *http.Client, cookie, cursor string) (F
 	if cursor != "" {
 		parsed, err := url.Parse(cursor)
 		if err != nil || parsed.Scheme != "https" || parsed.Host != "api.zhihu.com" || parsed.Path != "/topstory/recommend" {
-			return FeedPage{}, errors.New("知乎返回了无效的推荐分页地址")
+			return FeedPage{}, newAPIStatusError(http.StatusBadRequest, "知乎返回了无效的推荐分页地址")
 		}
 		u = parsed.String()
 	}
@@ -689,7 +699,7 @@ func getHotList(ctx context.Context, client *http.Client, cursor string) (FeedPa
 	if cursor != "" {
 		parsed, err := url.Parse(cursor)
 		if err != nil || parsed.Scheme != "https" || parsed.Host != "api.zhihu.com" || parsed.Path != "/topstory/hot-lists/total" {
-			return FeedPage{}, errors.New("知乎返回了无效的热榜分页地址")
+			return FeedPage{}, newAPIStatusError(http.StatusBadRequest, "知乎返回了无效的热榜分页地址")
 		}
 		u = parsed.String()
 	}
@@ -800,9 +810,9 @@ var errZhihuCookieUnauthorized = errors.New("知乎 Cookie 无效或已过期")
 func searchZhihuFallback(ctx context.Context, client *http.Client, secret, q string, cookieError error) (SearchPage, error) {
 	if secret == "" {
 		if cookieError != nil {
-			return SearchPage{}, errors.New("个人 Cookie 无效或已过期，且未配置 ZHIHU_ACCESS_SECRET 兜底")
+			return SearchPage{}, newAPIStatusError(http.StatusUnauthorized, "个人 Cookie 无效或已过期，且未配置 ZHIHU_ACCESS_SECRET 兜底")
 		}
-		return SearchPage{}, errors.New("请在搜索设置中填写个人 Cookie，或配置 ZHIHU_ACCESS_SECRET 作为兜底")
+		return SearchPage{}, newAPIStatusError(http.StatusUnauthorized, "请在搜索设置中填写个人 Cookie，或配置 ZHIHU_ACCESS_SECRET 作为兜底")
 	}
 	items, err := searchZhihuOpenAPI(ctx, client, secret, q)
 	if err != nil {
@@ -833,7 +843,7 @@ func searchZhihuPage(ctx context.Context, client *http.Client, cookie, q, cursor
 	if cursor != "" {
 		parsed, err := url.Parse(cursor)
 		if err != nil || parsed.Scheme != "https" || parsed.Host != "api.zhihu.com" || parsed.Path != basePath || parsed.Query().Get("q") != q {
-			return SearchPage{}, errors.New("知乎返回了无效的搜索分页地址")
+			return SearchPage{}, newAPIStatusError(http.StatusBadRequest, "知乎返回了无效的搜索分页地址")
 		}
 		u = parsed.String()
 	}
@@ -982,11 +992,8 @@ func feedString(v any) string {
 		return ""
 	}
 }
-func requestZhihuCookie(r *http.Request, fallback string) string {
-	if cookie := strings.TrimSpace(r.Header.Get("X-Zhihu-Cookie")); cookie != "" {
-		return cookie
-	}
-	return strings.TrimSpace(fallback)
+func requestZhihuCookie(r *http.Request) string {
+	return strings.TrimSpace(r.Header.Get("X-Zhihu-Cookie"))
 }
 func safeBody(b []byte) string {
 	s := strings.TrimSpace(string(b))
@@ -996,7 +1003,12 @@ func safeBody(b []byte) string {
 	return s
 }
 func apiError(w http.ResponseWriter, err error) {
-	writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+	status := http.StatusBadGateway
+	var statusErr *apiStatusError
+	if errors.As(err, &statusErr) {
+		status = statusErr.status
+	}
+	writeJSON(w, status, map[string]string{"error": err.Error()})
 }
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

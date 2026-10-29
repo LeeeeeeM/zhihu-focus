@@ -1,18 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Empty, Input, Spin, Switch } from 'antd';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Button, Empty, Input, Spin, Tooltip } from 'antd';
 import { RefreshCw, Search as SearchIcon } from 'lucide-react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { SearchCard } from '../components/ContentCard';
 import { useZhihuStore } from '../store/useZhihuStore';
 import type { ContentOpenType } from '../models/content';
 
-const autoLoadStorageKey = 'zhihu-focus-search-auto-load';
-
-function readAutoLoadPreference() {
-  try { return window.localStorage.getItem(autoLoadStorageKey) === 'true'; } catch { return false; }
-}
-
 export default function SearchPage() {
+  const autoLoad = useZhihuStore(state => state.autoLoad);
   const [searchParams, setSearchParams] = useSearchParams();
   const urlQuery = searchParams.get('q') || '';
   const [query, setQuery] = useState('');
@@ -29,13 +24,23 @@ export default function SearchPage() {
   const search = useZhihuStore(state => state.search);
   const loadMoreSearch = useZhihuStore(state => state.loadMoreSearch);
   const openContent = useZhihuStore(state => state.openContent);
-  const [autoLoad, setAutoLoad] = useState(readAutoLoadPreference);
   const [autoLoadArmed, setAutoLoadArmed] = useState(false);
+  const [headingTruncated, setHeadingTruncated] = useState(false);
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const loadSentinel = useRef<HTMLDivElement>(null);
   const queryRef = useRef(urlQuery);
   const navigate = useNavigate();
-  const location = useLocation();
   queryRef.current = urlQuery;
+
+  useLayoutEffect(() => {
+    const heading = headingRef.current;
+    if (!heading) return;
+    const update = () => setHeadingTruncated(heading.scrollWidth > heading.clientWidth);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(heading);
+    return () => observer.disconnect();
+  }, [submittedQuery]);
 
   useEffect(() => {
     setQuery(urlQuery);
@@ -47,17 +52,14 @@ export default function SearchPage() {
   }, [urlQuery, search, searchQuery]);
 
   useEffect(() => {
-    try { window.localStorage.setItem(autoLoadStorageKey, String(autoLoad)); } catch { /* Storage is optional. */ }
-  }, [autoLoad]);
-
-  useEffect(() => {
     const armAfterScroll = () => { if (window.scrollY > 0) setAutoLoadArmed(true); };
     window.addEventListener('scroll', armAfterScroll, { passive: true });
     return () => window.removeEventListener('scroll', armAfterScroll);
   }, []);
 
   const loadMoreAutomatically = useCallback(async () => {
-    if (useZhihuStore.getState().searchMoreLoading) return;
+    const state = useZhihuStore.getState();
+    if (!state.autoLoad || state.searchMoreLoading || queryRef.current !== urlQuery) return;
     const countBefore = useZhihuStore.getState().searchResults.length;
     const freshCount = await loadMoreSearch();
     if (queryRef.current !== urlQuery) return;
@@ -67,25 +69,28 @@ export default function SearchPage() {
   useEffect(() => {
     const target = loadSentinel.current;
     if (!target || !autoLoad || !autoLoadArmed || !results.length || !hasMore || loading || moreLoading) return;
+    let active = true;
     const observer = new IntersectionObserver(entries => {
-      if (entries.some(entry => entry.isIntersecting)) void loadMoreAutomatically();
+      if (active && entries.some(entry => entry.isIntersecting)) void loadMoreAutomatically();
     }, { rootMargin: '240px 0px' });
     observer.observe(target);
-    return () => observer.disconnect();
+    return () => { active = false; observer.disconnect(); };
   }, [autoLoad, autoLoadArmed, results.length, hasMore, loading, moreLoading, loadMoreAutomatically]);
 
   function submit(value = query) { setSearchParams(value.trim() ? { q: value.trim() } : {}); }
 
   const handleOpen = (type: ContentOpenType, id: string) => {
     if (type === 'question') {
-      navigate(`/questions/${id}`, { state: { from: `${location.pathname}${location.search}` } });
+      navigate(`/questions/${id}`);
       return;
     }
     void openContent(type, id);
   };
 
+  const headingText = submittedQuery ? `关于「${submittedQuery}」` : '搜索知乎';
+
   return <>
-    <div className="welcome">
+    <div className="welcome search-welcome">
       <div className="eyebrow"><span className="eyebrow-line"/> SEARCH ZHIHU</div>
       <h1>搜索你真正关心的</h1>
       <p>搜索知乎问题、回答和文章。</p>
@@ -98,12 +103,16 @@ export default function SearchPage() {
     </form>
     <div className="search-results">
       <div className="section-head">
-        <div><div className="eyebrow small">SEARCH RESULTS</div><h2>{submittedQuery ? `关于「${submittedQuery}」` : '搜索知乎'}</h2></div>
+        <div className="search-results-heading">
+          <div className="eyebrow small">SEARCH RESULTS</div>
+          <Tooltip title={headingTruncated ? headingText : undefined} trigger={['hover', 'focus']}>
+            <h2 ref={headingRef} tabIndex={headingTruncated ? 0 : undefined}>{headingText}</h2>
+          </Tooltip>
+        </div>
         <div className="search-result-actions">
           <span className="result-count">{loading ? '搜索中…' : `${results.length} 条结果`}</span>
-          {searchSource && <span className="search-source">{searchSource === 'cookie' ? '个人 Cookie' : searchUsedFallback ? 'Access Secret 兜底' : 'Access Secret'}</span>}
+          {searchSource === 'access_secret' && <span className="search-source">{searchUsedFallback ? 'Access Secret 兜底' : 'Access Secret'}</span>}
           <Button type="text" icon={<RefreshCw size={13}/>} onClick={() => { setAutoLoadArmed(false); window.scrollTo(0, 0); void search(submittedQuery); }} loading={loading} disabled={!submittedQuery.trim()}>重新搜索</Button>
-          <label className="auto-load-control"><span>滚到底自动加载</span><Switch size="small" checked={autoLoad} onChange={setAutoLoad} aria-label="搜索滚到底自动加载"/></label>
         </div>
       </div>
       {error && <div className="error-notice">{error}</div>}
@@ -116,6 +125,5 @@ export default function SearchPage() {
         : <Button className="load-more" type="text" onClick={() => void loadMoreSearch()} loading={moreLoading}>继续搜索　↓</Button>)}
       {!loading && !hasMore && results.length > 0 && !error && <div className="feed-end">已经到底了</div>}
     </div>
-    <footer className="footnote">知简 · 为专注阅读而做 <span>真实知乎数据</span></footer>
   </>;
 }
