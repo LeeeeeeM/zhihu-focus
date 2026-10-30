@@ -57,7 +57,8 @@ export function createRichContentSanitizer(root: typeof window) {
     });
     // Zhihu comments also represent images as a text link instead of an img.
     fragment.querySelectorAll('a[href]').forEach(link => {
-      if (link.textContent?.trim() !== '查看图片') return;
+      const label = link.textContent?.trim();
+      if (!label || !['查看图片', '图片', '[图片]'].includes(label)) return;
       const href = link.getAttribute('href');
       if (!href) return;
       const url = new URL(href);
