@@ -49,14 +49,17 @@ test('question answers follow the shared auto-load setting and stop on duplicate
     assert.equal(requests, 1);
     const card = dom.window.document.querySelector<HTMLElement>('.question-answer-card')!;
     const openButton = card.querySelector<HTMLButtonElement>('.question-answer-open')!;
+    assert.equal(openButton.tagName, 'BUTTON');
+    assert.equal(openButton.type, 'button');
+    assert.ok(openButton.getAttribute('aria-label'));
     const originalLink = card.querySelector<HTMLAnchorElement>('a')!;
     assert.equal(originalLink.target, '_blank');
     originalLink.addEventListener('click', event => event.preventDefault());
     await act(async () => { originalLink.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true })); });
     assert.deepEqual(opened, [], 'the original link does not open the answer drawer');
     await act(async () => { openButton.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); });
-    await act(async () => { openButton.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); });
-    assert.deepEqual(opened, ['answer:1', 'answer:1']);
+    // JSDOM does not synthesize native button clicks from keyboard events.
+    assert.deepEqual(opened, ['answer:1']);
     assert.doesNotMatch(card.textContent || '', /阅读回答与评论/);
     assert.match(dom.window.document.body.textContent || '', /继续加载回答/);
     Object.defineProperty(dom.window, 'scrollY', { value: 100, configurable: true });

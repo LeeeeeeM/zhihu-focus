@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, ColorPicker, Input, Segmented, Switch, Tag } from 'antd';
-import { Check, ChevronsDown, Image as ImageIcon, KeyRound, Minimize2, Palette, Save, Trash2, UserRound } from 'lucide-react';
+import { Check, ChevronsDown, Copy, Image as ImageIcon, KeyRound, Minimize2, Palette, Save, Trash2, UserRound } from 'lucide-react';
 import { isZhihuCookieStorageKey, readZhihuCookie, removeZhihuCookie, saveZhihuCookie, zhihuCookieChangedEvent } from '../services/searchCredential';
 import { useZhihuStore } from '../store/useZhihuStore';
 import { createThemePalette, defaultThemeColor, themePresets } from '../services/themePreferences';
 import { UserAvatar } from '../components/UserAvatar';
+import { copyTextToClipboard } from '../services/clipboard';
 
 export default function SettingsPage() {
   const serviceConfigured = useZhihuStore(state => state.serviceConfigured);
@@ -28,9 +29,16 @@ export default function SettingsPage() {
   const [cookieDraft, setCookieDraft] = useState('');
   const [message, setMessage] = useState('');
   const [settingsError, setSettingsError] = useState('');
+  const [cookieCopied, setCookieCopied] = useState(false);
+  const [copyingCookie, setCopyingCookie] = useState(false);
+  const cookieVersion = useRef(0);
 
   useEffect(() => {
-    const updateCredentialStatus = () => setHasPersonalCookie(Boolean(readZhihuCookie()));
+    const updateCredentialStatus = () => {
+      cookieVersion.current += 1;
+      setHasPersonalCookie(Boolean(readZhihuCookie()));
+      setCookieCopied(false);
+    };
     const onStorage = (event: StorageEvent) => { if (isZhihuCookieStorageKey(event.key)) updateCredentialStatus(); };
     window.addEventListener(zhihuCookieChangedEvent, updateCredentialStatus);
     window.addEventListener('storage', onStorage);
@@ -60,6 +68,25 @@ export default function SettingsPage() {
     setMessage(searchQuery ? 'Cookie 已清除，正在按无个人 Cookie 的方式刷新推荐和搜索。' : 'Cookie 已清除，正在刷新推荐内容。');
     void refreshFeed();
     if (searchQuery) void search(searchQuery);
+  }
+
+  async function copyCookie() {
+    const cookie = readZhihuCookie();
+    setCookieCopied(false);
+    setSettingsError('');
+    if (!cookie) {
+      setHasPersonalCookie(false);
+      setSettingsError('尚未保存个人 Cookie，请先保存。');
+      return;
+    }
+    const version = cookieVersion.current;
+    setCopyingCookie(true);
+    const copied = await copyTextToClipboard(cookie);
+    setCopyingCookie(false);
+    // Ignore results from a Cookie that changed while clipboard access was pending.
+    if (version !== cookieVersion.current || readZhihuCookie() !== cookie) return;
+    setCookieCopied(copied);
+    if (!copied) setSettingsError('复制失败，请检查浏览器剪贴板权限后重试。');
   }
 
   return <div className="settings-page">
@@ -101,13 +128,14 @@ export default function SettingsPage() {
       />
       <p className="settings-field-hint">从浏览器开发者工具的知乎请求头中复制 Cookie 完整值。已保存的 Cookie 不会回显；输入新值会覆盖当前值。</p>
 
-      {settingsError && <Alert type="error" showIcon message={settingsError} className="settings-alert"/>}
-      {searchError && <Alert type="error" showIcon message={searchError} className="settings-alert"/>}
-      {message && !searchError && <Alert type="success" showIcon message={message} className="settings-alert"/>}
+      {settingsError && <Alert type="error" showIcon title={settingsError} className="settings-alert"/>}
+      {searchError && <Alert type="error" showIcon title={searchError} className="settings-alert"/>}
+      {message && !searchError && <Alert type="success" showIcon title={message} className="settings-alert"/>}
       {(searchLoading || feedLoading) && <div className="settings-progress">正在用当前凭证刷新数据…</div>}
 
       <div className="settings-actions">
         <Button danger type="text" icon={<Trash2 size={14}/>} disabled={!hasPersonalCookie} onClick={clearCookie}>清除个人 Cookie</Button>
+        <Button icon={cookieCopied ? <Check size={14}/> : <Copy size={14}/>} disabled={!hasPersonalCookie} loading={copyingCookie} onClick={() => void copyCookie()} aria-live="polite">{cookieCopied ? '已复制 Cookie' : '复制 Cookie'}</Button>
         <Button type="primary" icon={<Save size={14}/>} onClick={saveCookie}>保存 Cookie</Button>
       </div>
     </section>

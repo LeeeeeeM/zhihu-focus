@@ -60,6 +60,36 @@ test('supports image placeholders, hiding, and restoring images while keeping te
   assert.equal(container.querySelector('img')?.getAttribute('src'), 'https://pic.zhimg.com/example.jpg');
 });
 
+test('comment image links follow all image modes while ordinary links remain intact', () => {
+  const dom = new JSDOM('<!doctype html><html><body></body></html>');
+  const sanitize = createRichContentSanitizer(dom.window as unknown as typeof window);
+  const container = dom.window.document.createElement('div');
+  const src = 'https://picx.zhimg.com/comment_qhd.jpg?source=example';
+  const html = `<p>评论正文</p><a href="${src}">查看图片</a><a href="https://www.zhihu.com/question/123">相关问题</a>`;
+
+  container.innerHTML = sanitize(html, 'hide');
+  assert.equal(container.querySelector('img, .image-placeholder'), null);
+  assert.doesNotMatch(container.textContent || '', /查看图片/);
+  assert.equal(container.querySelectorAll('a').length, 1);
+  assert.match(container.textContent || '', /评论正文/);
+
+  container.innerHTML = sanitize(html, 'placeholder');
+  assert.equal(container.querySelector('img'), null);
+  assert.equal(container.querySelector('.image-placeholder')?.textContent, '图片');
+  assert.doesNotMatch(container.innerHTML, /comment_qhd/);
+
+  container.innerHTML = sanitize(html, 'show');
+  assert.equal(container.querySelector('img')?.getAttribute('src'), src);
+  assert.equal(container.querySelector('img')?.getAttribute('loading'), 'lazy');
+  assert.equal(container.querySelector('img')?.getAttribute('referrerpolicy'), 'no-referrer');
+  assert.equal(container.querySelector('a')?.getAttribute('href'), 'https://www.zhihu.com/question/123');
+
+  container.innerHTML = sanitize('<a href="https://example.com/page">查看图片</a><a href="https://picx.zhimg.com.evil.example/a.jpg">查看图片</a><a href="javascript:alert(1)">查看图片</a>', 'show');
+  assert.equal(container.querySelector('img'), null);
+  assert.equal(container.querySelectorAll('a').length, 3);
+  dom.window.close();
+});
+
 test('image mode persists and preserves the previous switch preference', () => {
   const dom = new JSDOM('', { url: 'https://example.com' });
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'window');

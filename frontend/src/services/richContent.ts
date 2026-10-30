@@ -55,6 +55,27 @@ export function createRichContentSanitizer(root: typeof window) {
       ALLOW_DATA_ATTR: false,
       RETURN_DOM_FRAGMENT: true,
     });
+    // Zhihu comments also represent images as a text link instead of an img.
+    fragment.querySelectorAll('a[href]').forEach(link => {
+      if (link.textContent?.trim() !== '查看图片') return;
+      const href = link.getAttribute('href');
+      if (!href) return;
+      const url = new URL(href);
+      if (!(url.hostname === 'zhimg.com' || url.hostname.endsWith('.zhimg.com')) ||
+          !/\.(?:jpe?g|png|gif|webp|avif|bmp)$/i.test(url.pathname)) return;
+      if (mode === 'hide') {
+        link.remove();
+        return;
+      }
+      const image = root.document.createElement('img');
+      image.setAttribute('alt', '图片');
+      if (mode === 'show') {
+        image.setAttribute('src', href);
+        image.setAttribute('loading', 'lazy');
+        image.setAttribute('referrerpolicy', 'no-referrer');
+      }
+      link.replaceWith(image);
+    });
     if (mode === 'placeholder') {
       fragment.querySelectorAll('img').forEach(image => {
         const placeholder = root.document.createElement('span');
