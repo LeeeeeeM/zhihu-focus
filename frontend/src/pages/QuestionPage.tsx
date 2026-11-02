@@ -3,6 +3,8 @@ import { Button, Empty, Spin, Tag } from 'antd';
 import { ExternalLink, MessageCircle, Users } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { ContentTabLink } from '../components/ContentTabLink';
+import { LoadMoreFooter } from '../components/LoadMoreFooter';
+import { zhihuWebURL } from '../models/content';
 import { useZhihuStore } from '../store/useZhihuStore';
 import { useAutoLoad } from '../hooks/useAutoLoad';
 import { RichContent } from '../components/RichContent';
@@ -62,14 +64,12 @@ export default function QuestionPage() {
             <p>{answer.excerpt || '打开查看完整回答'}</p>
             <div className="question-answer-actions">
               <ContentTabLink type="answer" id={answer.id}/>
-              <a href={`https://www.zhihu.com/answer/${answer.id}`} target="_blank" rel="noopener noreferrer">查看原文 <ExternalLink size={13}/></a>
+              <a href={zhihuWebURL('answer', answer.id)} target="_blank" rel="noopener noreferrer">查看原文 <ExternalLink size={13}/></a>
             </div>
           </div>
         </article>)}</div>
         : !answersError && !questionLoading && <Empty className="page-empty" description="这个问题暂时没有可展示的回答"/>}
-      {hasMore && (automatic
-        ? <div className="load-sentinel" ref={loadSentinel} aria-live="polite">{moreLoading ? <><Spin size="small"/> 正在加载更多回答…</> : '继续向下滚动以加载'}</div>
-        : <Button className="load-question-answers" type="text" onClick={() => void loadMore()} loading={moreLoading}>继续加载回答　↓</Button>)}
+      <LoadMoreFooter hasMore={hasMore} automatic={automatic} sentinel={loadSentinel} moreLoading={moreLoading} idleText="继续向下滚动以加载" loadingText="正在加载更多回答…" buttonText="继续加载回答" buttonClassName="load-question-answers" onLoadMore={() => void loadMore()}/>
     </>
     {!questionLoading && !question && !questionError && <Empty className="page-empty" description="暂时无法读取这个问题"/>}
   </div>;

@@ -44,6 +44,21 @@ func validID(v string) bool {
 	return true
 }
 
+func zhihuContentURL(kind, id string) string {
+	switch kind {
+	case "answer":
+		return "https://www.zhihu.com/answer/" + id
+	case "article":
+		return "https://zhuanlan.zhihu.com/p/" + id
+	case "question":
+		return "https://www.zhihu.com/question/" + id
+	case "pin":
+		return "https://www.zhihu.com/pin/" + id
+	default:
+		return ""
+	}
+}
+
 func feedString(v any) string {
 	switch value := v.(type) {
 	case string:

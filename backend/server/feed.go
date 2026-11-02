@@ -6,22 +6,44 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 )
 
 func getFeed(ctx context.Context, client *http.Client, cookie, cursor string) (FeedPage, error) {
-	u := "https://api.zhihu.com/topstory/recommend?limit=20"
+	return loadFeedPage(ctx, client, cookie, cursor, "https://api.zhihu.com/topstory/recommend?limit=20", "/topstory/recommend", "知乎返回了无效的推荐分页地址", "推荐", "recommendation")
+}
+
+func getHotList(ctx context.Context, client *http.Client, cursor string) (FeedPage, error) {
+	return loadFeedPage(ctx, client, "", cursor, "https://api.zhihu.com/topstory/hot-lists/total?limit=20", "/topstory/hot-lists/total", "知乎返回了无效的热榜分页地址", "热榜", "hotlist")
+}
+
+func loadFeedPage(ctx context.Context, client *http.Client, cookie, cursor, fallback, path, invalidCursor, label, source string) (FeedPage, error) {
+	endpoint := fallback
 	if cursor != "" {
-		parsed, err := url.Parse(cursor)
-		if err != nil || !validZhihuCursor(cursor, "api.zhihu.com", "/topstory/recommend") {
-			return FeedPage{}, newAPIStatusError(http.StatusBadRequest, "知乎返回了无效的推荐分页地址")
+		resolved, err := checkedZhihuCursor(cursor, "api.zhihu.com", path, invalidCursor)
+		if err != nil {
+			return FeedPage{}, err
 		}
-		u = parsed.String()
+		endpoint = resolved
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	b, err := zhihuAppJSON(ctx, client, cookie, endpoint, label)
 	if err != nil {
 		return FeedPage{}, err
+	}
+	var env FeedEnvelope
+	if err = json.Unmarshal(b, &env); err != nil {
+		return FeedPage{}, fmt.Errorf("无法解析知乎%s响应：%w", label, err)
+	}
+	if env.Data == nil {
+		return FeedPage{}, fmt.Errorf("知乎列表响应缺少 data 字段")
+	}
+	return mapFeedPage(env, source), nil
+}
+
+func zhihuAppJSON(ctx context.Context, client *http.Client, cookie, endpoint, label string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
 	}
 	req.Header.Set("User-Agent", "com.zhihu.android/Futureve/10.0.0 Mozilla/5.0")
 	req.Header.Set("Accept", "application/json")
@@ -30,61 +52,17 @@ func getFeed(ctx context.Context, client *http.Client, cookie, cursor string) (F
 	}
 	resp, err := doZhihuRequest(client, req)
 	if err != nil {
-		return FeedPage{}, fmt.Errorf("知乎推荐请求失败：%w", err)
+		return nil, fmt.Errorf("知乎%s请求失败：%w", label, err)
 	}
 	defer resp.Body.Close()
 	b, err := readUpstreamBody(resp.Body)
 	if err != nil {
-		return FeedPage{}, err
+		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return FeedPage{}, fmt.Errorf("知乎推荐接口返回 HTTP %d", resp.StatusCode)
+		return nil, fmt.Errorf("知乎%s接口返回 HTTP %d", label, resp.StatusCode)
 	}
-	var env FeedEnvelope
-	if err = json.Unmarshal(b, &env); err != nil {
-		return FeedPage{}, fmt.Errorf("无法解析知乎推荐响应：%w", err)
-	}
-	if env.Data == nil {
-		return FeedPage{}, fmt.Errorf("知乎列表响应缺少 data 字段")
-	}
-	return mapFeedPage(env, "recommendation"), nil
-}
-
-func getHotList(ctx context.Context, client *http.Client, cursor string) (FeedPage, error) {
-	u := "https://api.zhihu.com/topstory/hot-lists/total?limit=20"
-	if cursor != "" {
-		parsed, err := url.Parse(cursor)
-		if err != nil || !validZhihuCursor(cursor, "api.zhihu.com", "/topstory/hot-lists/total") {
-			return FeedPage{}, newAPIStatusError(http.StatusBadRequest, "知乎返回了无效的热榜分页地址")
-		}
-		u = parsed.String()
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return FeedPage{}, err
-	}
-	req.Header.Set("User-Agent", "com.zhihu.android/Futureve/10.0.0 Mozilla/5.0")
-	req.Header.Set("Accept", "application/json")
-	resp, err := doZhihuRequest(client, req)
-	if err != nil {
-		return FeedPage{}, fmt.Errorf("知乎热榜请求失败：%w", err)
-	}
-	defer resp.Body.Close()
-	b, err := readUpstreamBody(resp.Body)
-	if err != nil {
-		return FeedPage{}, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return FeedPage{}, fmt.Errorf("知乎热榜接口返回 HTTP %d", resp.StatusCode)
-	}
-	var env FeedEnvelope
-	if err = json.Unmarshal(b, &env); err != nil {
-		return FeedPage{}, fmt.Errorf("无法解析知乎热榜响应：%w", err)
-	}
-	if env.Data == nil {
-		return FeedPage{}, fmt.Errorf("知乎列表响应缺少 data 字段")
-	}
-	return mapFeedPage(env, "hotlist"), nil
+	return b, nil
 }
 
 func mapFeedPage(env FeedEnvelope, source string) FeedPage {
@@ -102,18 +80,14 @@ func mapFeedPage(env FeedEnvelope, source string) FeedPage {
 		}
 		title := feedString(target["title"])
 		kind := feedString(target["type"])
-		if kind == "answer" {
-			kind = "回答"
+		switch kind {
+		case "answer":
 			if q, ok := target["question"].(map[string]any); ok {
 				title = feedString(q["title"])
-				kind = "回答"
 			}
-		} else if kind == "article" {
-			kind = "文章"
-		} else if kind == "pin" {
-			kind = "想法"
-		} else if kind == "question" {
-			kind = "问题"
+		case "article", "pin", "question":
+		default:
+			continue
 		}
 		if title == "" {
 			continue
@@ -144,18 +118,9 @@ func mapFeedPage(env FeedEnvelope, source string) FeedPage {
 			}
 		}
 		id := feedString(target["id"])
-		if !validID(id) || (kind != "问题" && kind != "回答" && kind != "文章" && kind != "想法") {
+		link := zhihuContentURL(kind, id)
+		if !validID(id) || link == "" {
 			continue
-		}
-		link := "https://www.zhihu.com"
-		if kind == "问题" {
-			link = "https://www.zhihu.com/question/" + id
-		} else if kind == "回答" {
-			link = "https://www.zhihu.com/answer/" + id
-		} else if kind == "文章" {
-			link = "https://zhuanlan.zhihu.com/p/" + id
-		} else if kind == "想法" {
-			link = "https://www.zhihu.com/pin/" + id
 		}
 		category, timeLabel := "推荐", "知乎推荐"
 		stats := fmt.Sprintf("%v 赞同 · %v 评论", target["voteup_count"], target["comment_count"])

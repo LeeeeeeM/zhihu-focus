@@ -1,41 +1,12 @@
+import type { ReactNode } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { ContentTabLink } from './ContentTabLink';
-import type { ContentOpenType, FeedItem, SearchResult } from '../models/content';
+import { contentKindLabel, openableContent, type ContentOpenType, type FeedItem, type SearchResult } from '../models/content';
 import { UserAvatar } from './UserAvatar';
 
 type ReadableContent = { type: ContentOpenType; id: string };
-type CardFooterProps = {
-  author: string;
-  avatar?: string;
-  stats: string;
-  url: string;
-  hasDetail: boolean;
-  content?: ReadableContent | null;
-};
 
-function feedReadableContent(item: FeedItem): ReadableContent | null {
-  if (item.kind === '问题') return { type: 'question', id: item.id };
-  if (item.kind === '回答') return { type: 'answer', id: item.id };
-  if (item.kind === '文章') return { type: 'article', id: item.id };
-  return null;
-}
-
-function searchReadableContent(item: SearchResult): ReadableContent | null {
-  const kind = item.kind.toLowerCase();
-  if (kind === 'question' || kind === '问题') return { type: 'question', id: item.id };
-  if (kind === 'answer') return { type: 'answer', id: item.id };
-  if (kind === 'article') return { type: 'article', id: item.id };
-  return null;
-}
-
-function contentKindLabel(kind: string) {
-  if (kind.toLowerCase() === 'question' || kind === '问题') return '问题';
-  if (kind.toLowerCase() === 'answer' || kind === '回答') return '回答';
-  if (kind.toLowerCase() === 'article' || kind === '文章') return '文章';
-  return kind;
-}
-
-function CardFooter({ author, avatar, stats, url, hasDetail, content }: CardFooterProps) {
+function CardFooter({ author, avatar, stats, url, hasDetail, content }: { author: string; avatar?: string; stats: string; url: string; hasDetail: boolean; content: ReadableContent | null }) {
   return <div className="card-footer">
     <div className="author">
       <UserAvatar size={22} src={avatar} name={author}/>
@@ -49,33 +20,30 @@ function CardFooter({ author, avatar, stats, url, hasDetail, content }: CardFoot
   </div>;
 }
 
-export function FeedCard({ item, onOpen }: { item: FeedItem; onOpen: (type: ContentOpenType, id: string) => void }) {
-  const readable = feedReadableContent(item);
-  return <article className={`feed-card ${readable ? 'feed-card-openable' : ''}`} onClick={event => {
+function ListCard({ kind, id, meta, title, excerpt, excerptClass = '', author, avatar, stats, url, className, onOpen }: {
+  kind: string; id: string; meta: ReactNode; title: string; excerpt: string; excerptClass?: string; author: string; avatar?: string; stats: string; url: string; className: string;
+  onOpen: (type: ContentOpenType, id: string) => void;
+}) {
+  const readable = openableContent(kind, id);
+  const label = contentKindLabel(kind);
+  const open = () => { if (readable) onOpen(readable.type, readable.id); };
+  return <article className={`${className} ${readable ? 'feed-card-openable' : ''}`} onClick={event => {
     if ((event.target as HTMLElement).closest('a,button')) return;
-    if (readable) onOpen(readable.type, readable.id);
+    open();
   }}>
-    <div className="card-top"><span className={`content-kind kind-${item.kind}`}>{item.kind}</span><span className="dot-sep">·</span><span>{item.category}</span><span className="dot-sep">·</span><span>{item.time}</span></div>
+    <div className="card-top"><span className={`content-kind kind-${label}`}>{label}</span>{meta}</div>
     <div className="feed-body"><div className="feed-copy">
-      {readable ? <button className="content-link content-title-button" onClick={() => onOpen(readable.type, readable.id)}>{item.title}</button> : <h2>{item.title}</h2>}
-      <p>{item.excerpt}</p>
+      {readable ? <button className="content-link content-title-button" onClick={open}>{title}</button> : <h2>{title}</h2>}
+      <p className={excerptClass}>{excerpt}</p>
     </div></div>
-    <CardFooter author={item.author} avatar={item.avatar} stats={item.stats} url={item.url} hasDetail={Boolean(readable)} content={readable}/>
+    <CardFooter author={author} avatar={avatar} stats={stats} url={url} hasDetail={Boolean(readable)} content={readable}/>
   </article>;
 }
 
+export function FeedCard({ item, onOpen }: { item: FeedItem; onOpen: (type: ContentOpenType, id: string) => void }) {
+  return <ListCard className="feed-card" kind={item.kind} id={item.id} meta={<><span className="dot-sep">·</span><span>{item.category}</span><span className="dot-sep">·</span><span>{item.time}</span></>} title={item.title} excerpt={item.excerpt} author={item.author} avatar={item.avatar} stats={item.stats} url={item.url} onOpen={onOpen}/>;
+}
+
 export function SearchCard({ item, onOpen }: { item: SearchResult; onOpen: (type: ContentOpenType, id: string) => void }) {
-  const readable = searchReadableContent(item);
-  const kindLabel = contentKindLabel(item.kind);
-  return <article className={`feed-card result-card ${readable ? 'feed-card-openable' : ''}`} onClick={event => {
-    if ((event.target as HTMLElement).closest('a,button')) return;
-    if (readable) onOpen(readable.type, readable.id);
-  }}>
-    <div className="card-top"><span className={`content-kind kind-${kindLabel}`}>{kindLabel}</span><span className="dot-sep">·</span><span>搜索</span><span className="dot-sep">·</span><span>知乎搜索</span></div>
-    <div className="feed-body"><div className="feed-copy">
-      {readable ? <button className="content-link content-title-button" onClick={() => onOpen(readable.type, readable.id)}>{item.title}</button> : <h2>{item.title}</h2>}
-      <p className="search-excerpt">{item.excerpt}</p>
-    </div></div>
-    <CardFooter author={item.author} avatar={item.avatar} stats={item.stats} url={item.url} hasDetail={Boolean(readable)} content={readable}/>
-  </article>;
+  return <ListCard className="feed-card result-card" kind={item.kind} id={item.id} meta={<><span className="dot-sep">·</span><span>搜索</span><span className="dot-sep">·</span><span>知乎搜索</span></>} title={item.title} excerpt={item.excerpt} excerptClass="search-excerpt" author={item.author} avatar={item.avatar} stats={item.stats} url={item.url} onOpen={onOpen}/>;
 }

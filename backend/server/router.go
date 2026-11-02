@@ -57,23 +57,24 @@ func newAPIHandler(cfg Config, client *http.Client) http.Handler {
 		writeJSON(w, http.StatusOK, page)
 	})
 	mux.HandleFunc("GET /api/detail", func(w http.ResponseWriter, r *http.Request) {
-		cookie := requestZhihuCookie(r)
-		if cookie == "" {
-			apiError(w, newAPIStatusError(http.StatusUnauthorized, "读取详情需要在知简设置中配置知乎 Cookie"))
+		cookie, ok := requireZhihuCookie(w, r, "读取详情需要在知简设置中配置知乎 Cookie")
+		if !ok {
 			return
 		}
 		contentType := r.URL.Query().Get("type")
 		id := r.URL.Query().Get("id")
-		if !validID(id) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "无效的回答 ID"})
-			return
-		}
 		var item ContentDetail
 		var err error
 		switch contentType {
 		case "answer":
+			if rejectInvalidID(w, id, "回答") {
+				return
+			}
 			item, err = getAnswerDetail(r.Context(), client, cookie, id)
 		case "article":
+			if rejectInvalidID(w, id, "文章") {
+				return
+			}
 			item, err = getArticleDetail(r.Context(), client, cookie, id)
 		default:
 			apiError(w, newAPIStatusError(http.StatusBadRequest, "不支持的知乎内容类型"))
@@ -86,23 +87,24 @@ func newAPIHandler(cfg Config, client *http.Client) http.Handler {
 		writeJSON(w, http.StatusOK, item)
 	})
 	mux.HandleFunc("GET /api/comments", func(w http.ResponseWriter, r *http.Request) {
-		cookie := requestZhihuCookie(r)
-		if cookie == "" {
-			apiError(w, newAPIStatusError(http.StatusUnauthorized, "读取评论需要在知简设置中配置知乎 Cookie"))
+		cookie, ok := requireZhihuCookie(w, r, "读取评论需要在知简设置中配置知乎 Cookie")
+		if !ok {
 			return
 		}
 		contentType := r.URL.Query().Get("type")
 		id := r.URL.Query().Get("id")
-		if !validID(id) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "无效的回答 ID"})
-			return
-		}
 		var page CommentPage
 		var err error
 		switch contentType {
 		case "answer":
+			if rejectInvalidID(w, id, "回答") {
+				return
+			}
 			page, err = getAnswerComments(r.Context(), client, cookie, id, r.URL.Query().Get("cursor"))
 		case "article":
+			if rejectInvalidID(w, id, "文章") {
+				return
+			}
 			page, err = getArticleComments(r.Context(), client, cookie, id, r.URL.Query().Get("cursor"))
 		default:
 			apiError(w, newAPIStatusError(http.StatusBadRequest, "不支持的知乎内容类型"))
@@ -115,14 +117,12 @@ func newAPIHandler(cfg Config, client *http.Client) http.Handler {
 		writeJSON(w, http.StatusOK, page)
 	})
 	mux.HandleFunc("GET /api/question", func(w http.ResponseWriter, r *http.Request) {
-		cookie := requestZhihuCookie(r)
-		if cookie == "" {
-			apiError(w, newAPIStatusError(http.StatusUnauthorized, "读取问题需要在知简设置中配置知乎 Cookie"))
+		cookie, ok := requireZhihuCookie(w, r, "读取问题需要在知简设置中配置知乎 Cookie")
+		if !ok {
 			return
 		}
 		id := r.URL.Query().Get("id")
-		if !validID(id) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "无效的问题 ID"})
+		if rejectInvalidID(w, id, "问题") {
 			return
 		}
 		question, err := getQuestionDetail(r.Context(), client, cookie, id)
@@ -133,14 +133,12 @@ func newAPIHandler(cfg Config, client *http.Client) http.Handler {
 		writeJSON(w, http.StatusOK, question)
 	})
 	mux.HandleFunc("GET /api/question/answers", func(w http.ResponseWriter, r *http.Request) {
-		cookie := requestZhihuCookie(r)
-		if cookie == "" {
-			apiError(w, newAPIStatusError(http.StatusUnauthorized, "读取问题回答需要在知简设置中配置知乎 Cookie"))
+		cookie, ok := requireZhihuCookie(w, r, "读取问题回答需要在知简设置中配置知乎 Cookie")
+		if !ok {
 			return
 		}
 		id := r.URL.Query().Get("id")
-		if !validID(id) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "无效的问题 ID"})
+		if rejectInvalidID(w, id, "问题") {
 			return
 		}
 		page, err := getQuestionAnswers(r.Context(), client, cookie, id, r.URL.Query().Get("cursor"))
@@ -151,9 +149,8 @@ func newAPIHandler(cfg Config, client *http.Client) http.Handler {
 		writeJSON(w, http.StatusOK, page)
 	})
 	mux.HandleFunc("GET /api/comment-replies", func(w http.ResponseWriter, r *http.Request) {
-		cookie := requestZhihuCookie(r)
-		if cookie == "" {
-			apiError(w, newAPIStatusError(http.StatusUnauthorized, "读取评论回复需要在知简设置中配置知乎 Cookie"))
+		cookie, ok := requireZhihuCookie(w, r, "读取评论回复需要在知简设置中配置知乎 Cookie")
+		if !ok {
 			return
 		}
 		contentType := r.URL.Query().Get("type")
@@ -175,6 +172,23 @@ func newAPIHandler(cfg Config, client *http.Client) http.Handler {
 
 func requestZhihuCookie(r *http.Request) string {
 	return strings.TrimSpace(r.Header.Get("X-Zhihu-Cookie"))
+}
+
+func requireZhihuCookie(w http.ResponseWriter, r *http.Request, message string) (string, bool) {
+	cookie := requestZhihuCookie(r)
+	if cookie == "" {
+		apiError(w, newAPIStatusError(http.StatusUnauthorized, message))
+		return "", false
+	}
+	return cookie, true
+}
+
+func rejectInvalidID(w http.ResponseWriter, id, label string) bool {
+	if validID(id) {
+		return false
+	}
+	apiError(w, newAPIStatusError(http.StatusBadRequest, "无效的"+label+" ID"))
+	return true
 }
 
 func apiError(w http.ResponseWriter, err error) {

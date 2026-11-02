@@ -16,7 +16,7 @@ test('account invalidation clears all private state and rejects pending old resp
     const pending = useZhihuStore.getState().refreshFeed();
     useZhihuStore.setState({ searchResults: [{ id: 'old' } as never], drawerOpen: true, detail: { id: 'old' } as never, comments: [{ id: 'old' } as never], questionAnswers: [{ id: 'old' } as never] });
     useZhihuStore.getState().invalidateAccount();
-    finish(Response.json({ items: [item('回答', 'old')], nextCursor: 'old', hasMore: true }));
+    finish(Response.json({ items: [item('answer', 'old')], nextCursor: 'old', hasMore: true }));
     await pending;
     const state = useZhihuStore.getState();
     assert.deepEqual(state.feed, []);
@@ -230,7 +230,7 @@ test('a delayed history write cannot pollute a new drawer or refresh another acc
 
 test('failed refresh does not leave the previous account feed or cursor visible', async () => {
   const previousFetch = globalThis.fetch;
-  useZhihuStore.setState({ feed: [item('回答', '1')], feedCursor: 'old-cursor', feedHasMore: true, feedSource: 'recommendation', feedLoading: false });
+  useZhihuStore.setState({ feed: [item('answer', '1')], feedCursor: 'old-cursor', feedHasMore: true, feedSource: 'recommendation', feedLoading: false });
   globalThis.fetch = async () => new Response(JSON.stringify({ error: '请求失败' }), { status: 502 });
   try {
     await useZhihuStore.getState().refreshFeed();
@@ -244,11 +244,11 @@ test('failed refresh does not leave the previous account feed or cursor visible'
 
 test('feed pagination keeps items of different kinds with the same ID', async () => {
   const previousFetch = globalThis.fetch;
-  useZhihuStore.setState({ feed: [item('回答', '1')], feedCursor: 'next', feedHasMore: true, feedLoading: false, feedMoreLoading: false });
-  globalThis.fetch = async () => new Response(JSON.stringify({ items: [item('文章', '1')], hasMore: false }), { status: 200 });
+  useZhihuStore.setState({ feed: [item('answer', '1')], feedCursor: 'next', feedHasMore: true, feedLoading: false, feedMoreLoading: false });
+  globalThis.fetch = async () => new Response(JSON.stringify({ items: [item('article', '1')], hasMore: false }), { status: 200 });
   try {
     await useZhihuStore.getState().loadMoreFeed();
-    assert.deepEqual(useZhihuStore.getState().feed.map(({ kind, id }) => `${kind}:${id}`), ['回答:1', '文章:1']);
+    assert.deepEqual(useZhihuStore.getState().feed.map(({ kind, id }) => `${kind}:${id}`), ['answer:1', 'article:1']);
   } finally { globalThis.fetch = previousFetch; }
 });
 

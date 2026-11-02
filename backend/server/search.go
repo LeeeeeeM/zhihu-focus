@@ -47,11 +47,12 @@ func searchZhihuPage(ctx context.Context, client *http.Client, cookie, q, cursor
 		"limit":      {"20"},
 	}.Encode()
 	if cursor != "" {
-		parsed, err := url.Parse(cursor)
-		if err != nil || !validZhihuCursor(cursor, "api.zhihu.com", basePath) || parsed.Query().Get("q") != q {
+		resolved, err := checkedZhihuCursor(cursor, "api.zhihu.com", basePath, "知乎返回了无效的搜索分页地址")
+		parsed, parseErr := url.Parse(resolved)
+		if err != nil || parseErr != nil || parsed.Query().Get("q") != q {
 			return SearchPage{}, newAPIStatusError(http.StatusBadRequest, "知乎返回了无效的搜索分页地址")
 		}
-		u = parsed.String()
+		u = resolved
 	}
 	referer := "https://www.zhihu.com/search?type=content&q=" + url.QueryEscape(q)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
@@ -128,12 +129,8 @@ func searchZhihuPage(ctx context.Context, client *http.Client, cookie, q, cursor
 			continue
 		}
 		title := x.Title
-		link := "https://www.zhihu.com/answer/" + id
-		if x.Type == "article" {
-			link = "https://zhuanlan.zhihu.com/p/" + id
-		} else if x.Type == "question" {
-			link = "https://www.zhihu.com/question/" + id
-		} else if title == "" {
+		link := zhihuContentURL(x.Type, id)
+		if x.Type == "answer" && title == "" {
 			title = x.Question.Title
 		}
 		excerpt := x.Excerpt

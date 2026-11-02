@@ -79,6 +79,10 @@ type Store = {
   loadMoreQuestionAnswers: () => Promise<number>;
 };
 
+function storedPage(page: { nextCursor?: string; hasMore: boolean }, current = '') {
+  return nextPageState(page.nextCursor, page.hasMore, current);
+}
+
 let searchRequestVersion = 0;
 let questionRequestVersion = 0;
 let feedRequestVersion = 0;
@@ -126,7 +130,10 @@ export const useZhihuStore = create<Store>((set, get) => ({
     set({ feed: [], feedCursor: '', feedHasMore: false, feedLoading: true, feedError: '', feedMoreLoading: false });
     try {
       const page = await zhihuService.getFeed();
-      if (version === feedRequestVersion) set({ feed: mergeUnique([], page.items, contentKey).items, feedSource: page.source || 'recommendation', feedCursor: nextPageState(page.nextCursor, page.hasMore).cursor, feedHasMore: nextPageState(page.nextCursor, page.hasMore).hasMore });
+      if (version === feedRequestVersion) {
+        const paging = storedPage(page);
+        set({ feed: mergeUnique([], page.items, contentKey).items, feedSource: page.source || 'recommendation', feedCursor: paging.cursor, feedHasMore: paging.hasMore });
+      }
     } catch (error) {
       if (version === feedRequestVersion) set({ feedSource: '', feedError: error instanceof Error ? error.message : '加载推荐失败' });
     } finally { if (version === feedRequestVersion) set({ feedLoading: false }); }
@@ -144,8 +151,9 @@ export const useZhihuStore = create<Store>((set, get) => ({
       set(state => {
         if (state.feedCursor !== feedCursor) return {};
         const merged = mergeUnique(state.feed, page.items, contentKey);
+        const paging = storedPage(page, feedCursor);
         freshCount = merged.freshCount;
-        return { feed: merged.items, feedSource: page.source || state.feedSource, feedCursor: nextPageState(page.nextCursor, page.hasMore, feedCursor).cursor, feedHasMore: nextPageState(page.nextCursor, page.hasMore, feedCursor).hasMore };
+        return { feed: merged.items, feedSource: page.source || state.feedSource, feedCursor: paging.cursor, feedHasMore: paging.hasMore };
       });
     } catch (error) {
       if (version === feedRequestVersion) set({ feedError: error instanceof Error ? error.message : '加载推荐失败' });
@@ -163,7 +171,10 @@ export const useZhihuStore = create<Store>((set, get) => ({
     set({ searchResults: [], searchQuery: normalizedQuery, searchSource: '', searchUsedFallback: false, searchCursor: '', searchHasMore: false, searchError: '', searchMoreError: '', searchLoading: true, searchMoreLoading: false });
     try {
       const page = await zhihuService.search({ query: normalizedQuery });
-      if (version === searchRequestVersion) set({ searchResults: mergeUnique([], page.items, contentKey).items, searchCursor: nextPageState(page.nextCursor, page.hasMore).cursor, searchHasMore: nextPageState(page.nextCursor, page.hasMore).hasMore, searchSource: page.source || '', searchUsedFallback: page.usedFallback || false });
+      if (version === searchRequestVersion) {
+        const paging = storedPage(page);
+        set({ searchResults: mergeUnique([], page.items, contentKey).items, searchCursor: paging.cursor, searchHasMore: paging.hasMore, searchSource: page.source || '', searchUsedFallback: page.usedFallback || false });
+      }
     } catch (error) {
       if (version === searchRequestVersion) set({ searchError: error instanceof Error ? error.message : '搜索失败' });
     } finally { if (version === searchRequestVersion) set({ searchLoading: false }); }
@@ -181,8 +192,9 @@ export const useZhihuStore = create<Store>((set, get) => ({
       set(state => {
         if (state.searchQuery !== searchQuery || state.searchCursor !== searchCursor) return {};
         const merged = mergeUnique(state.searchResults, page.items, contentKey);
+        const paging = storedPage(page, searchCursor);
         freshCount = merged.freshCount;
-        return { searchResults: merged.items, searchCursor: nextPageState(page.nextCursor, page.hasMore, searchCursor).cursor, searchHasMore: nextPageState(page.nextCursor, page.hasMore, searchCursor).hasMore, searchSource: page.source || state.searchSource, searchUsedFallback: page.usedFallback || state.searchUsedFallback };
+        return { searchResults: merged.items, searchCursor: paging.cursor, searchHasMore: paging.hasMore, searchSource: page.source || state.searchSource, searchUsedFallback: page.usedFallback || state.searchUsedFallback };
       });
     } catch (error) {
       if (version === searchRequestVersion) set({ searchMoreError: error instanceof Error ? error.message : '加载更多搜索结果失败' });
@@ -222,7 +234,11 @@ export const useZhihuStore = create<Store>((set, get) => ({
       .catch(error => set(state => version === contentRequestVersion && state.contentId === id && state.contentType === type ? { detailError: error instanceof Error ? error.message : '读取内容失败' } : {}))
       .finally(() => set(state => version === contentRequestVersion && state.contentId === id && state.contentType === type ? { detailLoading: false } : {}));
     const commentsTask = zhihuService.getContentComments(type, id)
-      .then(page => set(state => version === contentRequestVersion && state.contentId === id && state.contentType === type ? { comments: mergeUnique([], page.items, idKey).items, commentsCursor: nextPageState(page.nextCursor, page.hasMore).cursor, commentsHasMore: nextPageState(page.nextCursor, page.hasMore).hasMore } : {}))
+      .then(page => set(state => {
+        if (version !== contentRequestVersion || state.contentId !== id || state.contentType !== type) return {};
+        const paging = storedPage(page);
+        return { comments: mergeUnique([], page.items, idKey).items, commentsCursor: paging.cursor, commentsHasMore: paging.hasMore };
+      }))
       .catch(error => set(state => version === contentRequestVersion && state.contentId === id && state.contentType === type ? { commentsError: error instanceof Error ? error.message : '读取评论失败' } : {}))
       .finally(() => set(state => version === contentRequestVersion && state.contentId === id && state.contentType === type ? { commentsLoading: false } : {}));
     await Promise.all([detailTask, commentsTask]);
@@ -243,7 +259,8 @@ export const useZhihuStore = create<Store>((set, get) => ({
       set(state => {
         if (version !== contentRequestVersion || state.contentId !== contentId || state.contentType !== contentType) return {};
         const merged = mergeUnique(state.comments, page.items, idKey);
-        return { comments: merged.items, commentsCursor: nextPageState(page.nextCursor, page.hasMore, commentsCursor).cursor, commentsHasMore: nextPageState(page.nextCursor, page.hasMore, commentsCursor).hasMore };
+        const paging = storedPage(page, commentsCursor);
+        return { comments: merged.items, commentsCursor: paging.cursor, commentsHasMore: paging.hasMore };
       });
     } catch (error) {
       set(state => version === contentRequestVersion && state.contentId === contentId && state.contentType === contentType
@@ -273,7 +290,7 @@ export const useZhihuStore = create<Store>((set, get) => ({
         const current = state.comments.find(item => item.id === commentId);
         if (!current) return {};
         const merged = mergeUnique(current.replies || [], page.items, idKey);
-        const paging = nextPageState(page.nextCursor, page.hasMore, current.repliesCursor);
+        const paging = storedPage(page, current.repliesCursor);
 
         return {
           comments: state.comments.map(item => item.id === commentId ? {
@@ -306,7 +323,11 @@ export const useZhihuStore = create<Store>((set, get) => ({
       .catch(error => { if (version === questionRequestVersion) set({ questionError: error instanceof Error ? error.message : '读取问题失败' }); })
       .finally(() => { if (version === questionRequestVersion) set({ questionLoading: false }); });
     const answersTask = zhihuService.getQuestionAnswers(id)
-      .then(page => { if (version === questionRequestVersion) set({ questionAnswers: mergeUnique([], page.items, idKey).items, questionAnswersCursor: nextPageState(page.nextCursor, page.hasMore).cursor, questionAnswersHasMore: nextPageState(page.nextCursor, page.hasMore).hasMore }); })
+      .then(page => {
+        if (version !== questionRequestVersion) return;
+        const paging = storedPage(page);
+        set({ questionAnswers: mergeUnique([], page.items, idKey).items, questionAnswersCursor: paging.cursor, questionAnswersHasMore: paging.hasMore });
+      })
       .catch(error => { if (version === questionRequestVersion) set({ questionAnswersError: error instanceof Error ? error.message : '读取问题回答失败' }); })
       .finally(() => { if (version === questionRequestVersion) set({ questionAnswersLoading: false }); });
     await Promise.all([questionTask, answersTask]);
@@ -323,8 +344,9 @@ export const useZhihuStore = create<Store>((set, get) => ({
       set(state => {
         if (version !== questionRequestVersion || state.questionId !== id) return {};
         const merged = mergeUnique(state.questionAnswers, page.items, idKey);
+        const paging = storedPage(page, questionAnswersCursor);
         freshCount = merged.freshCount;
-        return { questionAnswers: merged.items, questionAnswersCursor: nextPageState(page.nextCursor, page.hasMore, questionAnswersCursor).cursor, questionAnswersHasMore: nextPageState(page.nextCursor, page.hasMore, questionAnswersCursor).hasMore };
+        return { questionAnswers: merged.items, questionAnswersCursor: paging.cursor, questionAnswersHasMore: paging.hasMore };
       });
     } catch (error) {
       set(state => version === questionRequestVersion && state.questionId === id

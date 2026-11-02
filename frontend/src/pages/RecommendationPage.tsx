@@ -5,6 +5,8 @@ import { useZhihuStore } from '../store/useZhihuStore';
 import { useContentOpener } from '../hooks/useContentOpener';
 import { useAutoLoad } from '../hooks/useAutoLoad';
 import { FeedCard } from '../components/ContentCard';
+import { LoadMoreFooter } from '../components/LoadMoreFooter';
+import { contentKindLabel } from '../models/content';
 
 const recommendationCategories = ['全部', '回答', '文章', '想法'];
 const hotListCategories = ['全部', '问题'];
@@ -21,13 +23,13 @@ export default function RecommendationPage() {
   const handleOpen = useContentOpener();
   const [category, setCategory] = useState('全部');
   const categories = feedSource === 'hotlist' ? hotListCategories : recommendationCategories;
-  const visible = useMemo(() => feed.filter(item => category === '全部' || item.kind === category), [feed, category]);
+  const visible = useMemo(() => feed.filter(item => category === '全部' || contentKindLabel(item.kind) === category), [feed, category]);
   const hasVisibleItems = visible.length > 0;
 
   const loadMoreVisible = async () => {
-    const count = useZhihuStore.getState().feed.filter(item => category === '全部' || item.kind === category).length;
+    const count = useZhihuStore.getState().feed.filter(item => category === '全部' || contentKindLabel(item.kind) === category).length;
     await loadMoreFeed();
-    return Math.max(0, useZhihuStore.getState().feed.filter(item => category === '全部' || item.kind === category).length - count);
+    return Math.max(0, useZhihuStore.getState().feed.filter(item => category === '全部' || contentKindLabel(item.kind) === category).length - count);
   };
   const { sentinel: loadSentinel, automatic, pause } = useAutoLoad({ hasItems: hasVisibleItems, hasMore: feedHasMore, loading: feedLoading, moreLoading: feedMoreLoading, error: feedError, resetKey: category, loadMore: loadMoreVisible });
   useEffect(() => { window.scrollTo(0, 0); }, [category]);
@@ -50,9 +52,6 @@ export default function RecommendationPage() {
     {feedLoading ? <div className="loading-state"><Spin/><span>正在加载知乎推荐…</span></div> : visible.length
       ? <div className="feed-list">{visible.map(item => <FeedCard key={`${item.kind}:${item.id}`} item={item} onOpen={handleOpen}/>)}</div>
       : <Empty className="page-empty" description={feedError ? '推荐暂时不可用' : '当前分类没有推荐内容'}/>}
-    {feedHasMore && (automatic
-      ? <div className="load-sentinel" ref={loadSentinel} aria-live="polite">{feedMoreLoading ? <><Spin size="small"/> 正在加载更多推荐…</> : '继续向下滚动以加载'}</div>
-      : <Button className="load-more" type="text" onClick={() => void loadMoreFeed()} loading={feedMoreLoading}>继续探索　↓</Button>)}
-    {!feedLoading && !feedHasMore && !feedError && <div className="feed-end">已经到底了</div>}
+    <LoadMoreFooter hasMore={feedHasMore} automatic={automatic} sentinel={loadSentinel} moreLoading={feedMoreLoading} idleText="继续向下滚动以加载" loadingText="正在加载更多推荐…" buttonText="继续探索" showEnd={!feedLoading && !feedHasMore && !feedError} onLoadMore={() => void loadMoreFeed()}/>
   </>;
 }

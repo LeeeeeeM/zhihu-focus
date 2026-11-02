@@ -7,9 +7,9 @@ import { useHistoryStore } from '../store/useHistoryStore';
 import { useAutoLoad } from '../hooks/useAutoLoad';
 import { useContentOpener } from '../hooks/useContentOpener';
 import { ContentTabLink } from '../components/ContentTabLink';
+import { LoadMoreFooter } from '../components/LoadMoreFooter';
+import { contentKindLabel, openableContent } from '../models/content';
 import { isZhihuCookieStorageKey, readZhihuCookie, zhihuCookieChangedEvent } from '../services/searchCredential';
-
-const kindLabels: Record<string, string> = { answer: '回答', article: '文章', question: '问题', pin: '想法', profile: '用户', zvideo: '视频' };
 
 export default function HistoryPage() {
   const { items, loading, moreLoading, error, hasMore, refresh, loadMore, ensureLoaded, setScrollY } = useHistoryStore(useShallow(state => ({
@@ -56,22 +56,16 @@ export default function HistoryPage() {
     {error && <div className="error-notice" role="status">{error} <Link to="/settings">设置与 Cookie</Link>{!hasMore && <Button type="link" onClick={refreshHistory}>重试</Button>}</div>}
     {loading ? <div className="loading-state"><Spin/><span>正在读取浏览历史…</span></div>
       : items.length ? <div className="feed-list">{items.map(item => {
-        const kind = item.kind;
-        const readable = kind === 'answer' || kind === 'article' || kind === 'question';
-        const open = () => {
-          if (kind === 'question' || kind === 'answer' || kind === 'article') handleOpen(kind, item.id);
-        };
-        return <article className={`feed-card ${readable ? 'feed-card-openable' : ''}`} key={`${kind}:${item.id}`} onClick={event => {
+        const readable = openableContent(item.kind, item.id);
+        const open = () => { if (readable) handleOpen(readable.type, readable.id); };
+        return <article className={`feed-card ${readable ? 'feed-card-openable' : ''}`} key={`${item.kind}:${item.id}`} onClick={event => {
           if (!(event.target as HTMLElement).closest('a,button') && readable) open();
         }}>
-          <div className="card-top"><span className="content-kind">{kindLabels[kind] || '内容'}</span>{item.time && <><span className="dot-sep">·</span><span>{item.time} 浏览</span></>}</div>
+          <div className="card-top"><span className="content-kind">{contentKindLabel(item.kind)}</span>{item.time && <><span className="dot-sep">·</span><span>{item.time} 浏览</span></>}</div>
           <div className="feed-body"><div className="feed-copy">{readable ? <button className="content-link content-title-button" onClick={open}>{item.title}</button> : <h2>{item.title}</h2>}<p>{item.excerpt}</p></div></div>
-          <div className="card-footer"><div className="author"><b>{item.author}</b></div><div className="card-actions">{(kind === 'answer' || kind === 'article' || kind === 'question') && <ContentTabLink type={kind} id={item.id}/>}<a className="detail-link" href={item.url} target="_blank" rel="noopener noreferrer">在知乎打开 <ExternalLink size={14}/></a></div></div>
+          <div className="card-footer"><div className="author"><b>{item.author}</b></div><div className="card-actions">{readable && <ContentTabLink type={readable.type} id={readable.id}/>}<a className="detail-link" href={item.url} target="_blank" rel="noopener noreferrer">在知乎打开 <ExternalLink size={14}/></a></div></div>
         </article>;
       })}</div> : !error && <Empty className="page-empty" description="暂无云端浏览记录"/>}
-    {hasMore && !loading && (automatic
-      ? <div className="load-sentinel" ref={loadSentinel} aria-live="polite">{moreLoading ? <><Spin size="small"/> 正在加载更多历史…</> : '继续向下滚动以加载'}</div>
-      : <Button className="load-more" type="text" loading={moreLoading} onClick={() => void loadMore()}>{error ? '重试加载' : '加载更多历史'}　↓</Button>)}
-    {!loading && !hasMore && items.length > 0 && !error && <div className="feed-end">已经到底了</div>}
+    <LoadMoreFooter hasMore={hasMore} blocked={loading} automatic={automatic} sentinel={loadSentinel} moreLoading={moreLoading} idleText="继续向下滚动以加载" loadingText="正在加载更多历史…" buttonText={error ? '重试加载' : '加载更多历史'} showEnd={!loading && !hasMore && items.length > 0 && !error} onLoadMore={() => void loadMore()}/>
   </div>;
 }

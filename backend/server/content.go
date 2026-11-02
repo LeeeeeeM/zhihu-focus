@@ -6,13 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 )
 
 func getAnswerDetail(ctx context.Context, client *http.Client, cookie, id string) (ContentDetail, error) {
+	link := zhihuContentURL("answer", id)
 	u := "https://www.zhihu.com/api/v4/answers/" + id + "?include=content,excerpt,question,author,voteup_count,comment_count"
-	b, err := zhihuWebGet(ctx, client, cookie, "https://www.zhihu.com/answer/"+id, u)
+	b, err := zhihuWebGet(ctx, client, cookie, link, u)
 	if err != nil {
 		return ContentDetail{}, err
 	}
@@ -23,12 +23,11 @@ func getAnswerDetail(ctx context.Context, client *http.Client, cookie, id string
 	if strings.TrimSpace(raw.Question.Title) == "" && strings.TrimSpace(raw.Content) == "" {
 		return ContentDetail{}, fmt.Errorf("知乎详情响应缺少有效内容")
 	}
-	link := "https://www.zhihu.com/answer/" + id
 	return ContentDetail{ID: id, QuestionID: rawID(raw.Question.ID), Title: raw.Question.Title, Content: plainText(raw.Content), ContentHTML: raw.Content, Author: raw.Author.Name, Avatar: raw.Author.Avatar, CreatedAt: formatUnix(raw.CreatedTime), VoteUpCount: raw.VoteUpCount, CommentCount: raw.CommentCount, URL: link}, nil
 }
 
 func getQuestionDetail(ctx context.Context, client *http.Client, cookie, id string) (QuestionInfo, error) {
-	webURL := "https://www.zhihu.com/question/" + id
+	webURL := zhihuContentURL("question", id)
 	endpoint := "https://www.zhihu.com/api/v4/questions/" + id + "?include=detail,excerpt,created,updated_time,answer_count,follower_count,comment_count,author,topics"
 	b, err := zhihuWebGet(ctx, client, cookie, webURL, endpoint)
 	if err != nil {
@@ -61,7 +60,7 @@ func getQuestionDetail(ctx context.Context, client *http.Client, cookie, id stri
 }
 
 func getQuestionSummary(ctx context.Context, client *http.Client, cookie, id string) (QuestionInfo, error) {
-	webURL := "https://www.zhihu.com/question/" + id
+	webURL := zhihuContentURL("question", id)
 	endpoint := "https://www.zhihu.com/api/v4/questions/" + id + "/answers?include=question&limit=1&offset=0&sort_by=default"
 	b, err := zhihuWebGet(ctx, client, cookie, webURL, endpoint)
 	if err != nil {
@@ -87,13 +86,13 @@ func getQuestionAnswers(ctx context.Context, client *http.Client, cookie, id, cu
 	basePath := "/api/v4/questions/" + id + "/answers"
 	u := "https://www.zhihu.com" + basePath + "?include=data[*].excerpt,created_time,comment_count,voteup_count,author&limit=20&offset=0&sort_by=default"
 	if cursor != "" {
-		parsed, err := url.Parse(cursor)
-		if err != nil || !validZhihuCursor(cursor, "www.zhihu.com", basePath) {
-			return QuestionAnswerPage{}, newAPIStatusError(http.StatusBadRequest, "知乎返回了无效的问题回答分页地址")
+		resolved, err := checkedZhihuCursor(cursor, "www.zhihu.com", basePath, "知乎返回了无效的问题回答分页地址")
+		if err != nil {
+			return QuestionAnswerPage{}, err
 		}
-		u = parsed.String()
+		u = resolved
 	}
-	b, err := zhihuWebGet(ctx, client, cookie, "https://www.zhihu.com/question/"+id, u)
+	b, err := zhihuWebGet(ctx, client, cookie, zhihuContentURL("question", id), u)
 	if err != nil {
 		return QuestionAnswerPage{}, err
 	}
@@ -125,7 +124,7 @@ func getQuestionAnswers(ctx context.Context, client *http.Client, cookie, id, cu
 }
 
 func getArticleDetail(ctx context.Context, client *http.Client, cookie, id string) (ContentDetail, error) {
-	webURL := "https://zhuanlan.zhihu.com/p/" + id
+	webURL := zhihuContentURL("article", id)
 	endpoint := "https://zhuanlan.zhihu.com/api/articles/" + id
 	b, err := zhihuWebGet(ctx, client, cookie, webURL, endpoint)
 	if err != nil {

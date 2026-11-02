@@ -10,6 +10,7 @@ const { Title } = Typography;
 
 export function ContentReader() {
   const type = useZhihuStore(state => state.contentType);
+  const readerMode = useZhihuStore(state => state.readerMode);
   const contentId = useZhihuStore(state => state.contentId);
   const detail = useZhihuStore(state => state.detail);
   const detailLoading = useZhihuStore(state => state.detailLoading);
@@ -25,7 +26,7 @@ export function ContentReader() {
   const loadMoreComments = useZhihuStore(state => state.loadMoreComments);
   return (
     <div className="drawer-content">
-      {detailError && <div className="error-notice">{detailError} {type && contentId && <Button type="link" onClick={() => void openContent(type, contentId)}>重试</Button>}</div>}
+      {detailError && <div className="error-notice">{detailError} {type && contentId && <Button type="link" onClick={() => void openContent(type, contentId, readerMode === 'page' ? 'page' : 'drawer')}>重试</Button>}</div>}
       {detailLoading && !detail && <div className="drawer-loading"><Spin size="large"/><span>正在读取知乎内容…</span></div>}
       {detail && <article className="reader-article drawer-article">
         <div className="reader-kicker">知乎{type === 'article' ? '文章' : '回答'}</div>

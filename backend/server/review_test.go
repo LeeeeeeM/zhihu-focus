@@ -150,6 +150,14 @@ func TestOfficialSearchSchemaAndCanonicalIDs(t *testing.T) {
 	}
 }
 
+func TestFeedUsesCanonicalKinds(t *testing.T) {
+	client := fixtureClient(`{"data":[{"target":{"id":"12","type":"answer","title":"原标题","excerpt":"摘要","voteup_count":3,"comment_count":1,"question":{"title":"问题标题"},"author":{"name":"作者"}}},{"target":{"id":"34","type":"pin","title":"一个想法","excerpt":""}}],"paging":{"is_end":true}}`)
+	page, err := getFeed(context.Background(), client, "cookie", "")
+	if err != nil || len(page.Items) != 2 || page.Items[0].Kind != "answer" || page.Items[0].Title != "问题标题" || page.Items[0].URL != "https://www.zhihu.com/answer/12" || page.Items[1].Kind != "pin" || page.Items[1].URL != "https://www.zhihu.com/pin/34" {
+		t.Fatalf("feed mapping: %#v %v", page, err)
+	}
+}
+
 func TestCookieSearchKeepsQuestions(t *testing.T) {
 	client := fixtureClient(`{"data":[{"object":{"id":123,"type":"question","title":"问题标题"}}],"paging":{"is_end":true}}`)
 	page, err := searchZhihuPage(context.Background(), client, "cookie", "问题", "")

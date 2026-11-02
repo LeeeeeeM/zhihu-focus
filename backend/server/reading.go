@@ -89,11 +89,7 @@ func addHistory(ctx context.Context, client *http.Client, cookie, kind, id strin
 
 func sendReadingWrite(client *http.Client, req *http.Request, cookie, kind, id, label string, requireSuccess bool, body ...string) error {
 	req.Header.Set("Origin", "https://www.zhihu.com")
-	referer := "https://www.zhihu.com/answer/" + id
-	if kind == "article" {
-		referer = "https://zhuanlan.zhihu.com/p/" + id
-	}
-	applyZhihuWebHeaders(req, cookie, referer, body...)
+	applyZhihuWebHeaders(req, cookie, zhihuContentURL(kind, id), body...)
 	if xsrf := strings.Trim(rawCookieValue(cookie, "_xsrf"), "\""); xsrf != "" {
 		req.Header.Set("x-xsrftoken", xsrf)
 	}

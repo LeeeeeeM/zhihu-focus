@@ -34,6 +34,16 @@ func validZhihuCursor(cursor, host, path string) bool {
 	return err == nil && u.Scheme == "https" && u.Host == host && u.Path == path && u.User == nil && u.Fragment == ""
 }
 
+func checkedZhihuCursor(cursor, host, path, invalidMessage string) (string, error) {
+	if cursor == "" {
+		return "", nil
+	}
+	if !validZhihuCursor(cursor, host, path) {
+		return "", newAPIStatusError(http.StatusBadRequest, invalidMessage)
+	}
+	return cursor, nil
+}
+
 func readUpstreamBody(body io.Reader) ([]byte, error) {
 	const limit = 8 << 20
 	b, err := io.ReadAll(io.LimitReader(body, limit+1))

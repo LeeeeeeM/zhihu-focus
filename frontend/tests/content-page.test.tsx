@@ -44,6 +44,12 @@ test('answer and article pages render the shared reader and sharing links preser
     assert.equal(useZhihuStore.getState().readerMode, 'page');
     assert.equal(dom.window.document.querySelector('a.question-title-button')?.getAttribute('href'), '/zh/questions/101');
     assert.equal(writes, 2, 'standalone reading saves history and reports read once each');
+    await act(async () => { useZhihuStore.setState({ detail: null, detailError: '暂时失败', detailLoading: false }); });
+    const retry = Array.from(dom.window.document.querySelectorAll('button')).find(button => button.textContent?.includes('重试'));
+    await act(async () => { retry?.click(); });
+    assert.equal(useZhihuStore.getState().readerMode, 'page', 'retry stays on the standalone page');
+    assert.equal(useZhihuStore.getState().drawerOpen, false);
+    assert.match(dom.window.document.body.textContent!, /回答示例/);
     await act(async () => root.render(<MemoryRouter key="article" basename="/zh" initialEntries={['/zh/articles/201']}><Routes><Route path="/articles/:id" element={<ContentPage type="article"/>}/></Routes></MemoryRouter>));
     assert.match(dom.window.document.body.textContent!, /文章示例/);
     assert.match(dom.window.document.body.textContent!, /评论正文/);

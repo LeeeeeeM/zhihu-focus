@@ -3,6 +3,7 @@ import { Button, Empty, Input, Spin, Tooltip } from 'antd';
 import { RefreshCw, Search as SearchIcon } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { SearchCard } from '../components/ContentCard';
+import { LoadMoreFooter } from '../components/LoadMoreFooter';
 import { useZhihuStore } from '../store/useZhihuStore';
 import { useContentOpener } from '../hooks/useContentOpener';
 import { useAutoLoad } from '../hooks/useAutoLoad';
@@ -82,10 +83,7 @@ export default function SearchPage() {
       {loading ? <div className="loading-state"><Spin/><span>正在搜索知乎…</span></div> : results.length
         ? results.map(result => <SearchCard key={`${result.kind}:${result.id}`} item={result} onOpen={handleOpen}/>)
         : <Empty className="page-empty" image={<SearchIcon size={26}/>} description={error ? '请检查知乎凭证或稍后重试' : submittedQuery ? '还没有找到相关内容，试试更短的关键词' : '输入关键词开始搜索'}/>}
-      {hasMore && (automatic
-        ? <div className="load-sentinel" ref={loadSentinel} aria-live="polite">{moreLoading ? <><Spin size="small"/> 正在加载更多搜索结果…</> : '继续向下滚动以加载'}</div>
-        : <Button className="load-more" type="text" onClick={() => void loadMoreSearch()} loading={moreLoading}>继续搜索　↓</Button>)}
-      {!loading && !hasMore && results.length > 0 && !error && <div className="feed-end">已经到底了</div>}
+      <LoadMoreFooter hasMore={hasMore} automatic={automatic} sentinel={loadSentinel} moreLoading={moreLoading} idleText="继续向下滚动以加载" loadingText="正在加载更多搜索结果…" buttonText="继续搜索" showEnd={!loading && !hasMore && results.length > 0 && !error} onLoadMore={() => void loadMoreSearch()}/>
     </div>
   </>;
 }

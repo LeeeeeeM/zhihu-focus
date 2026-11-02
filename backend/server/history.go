@@ -51,10 +51,11 @@ func validHistoryCursor(cursor string) bool {
 func getHistory(ctx context.Context, client *http.Client, cookie, cursor string) (HistoryPage, error) {
 	endpoint := historyEndpoint + "?offset=0&limit=20"
 	if cursor != "" {
-		if !validHistoryCursor(cursor) {
-			return HistoryPage{}, newAPIStatusError(http.StatusBadRequest, "无效的浏览历史分页地址")
+		resolved, err := checkedZhihuCursor(cursor, "api.zhihu.com", "/unify-consumption/read_history", "无效的浏览历史分页地址")
+		if err != nil {
+			return HistoryPage{}, err
 		}
-		endpoint = cursor
+		endpoint = resolved
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -141,17 +142,8 @@ func historyContent(kind, id, action string) (string, string, string) {
 			}
 		}
 	}
-	if validID(id) {
-		switch kind {
-		case "answer":
-			return kind, id, "https://www.zhihu.com/answer/" + id
-		case "question":
-			return kind, id, "https://www.zhihu.com/question/" + id
-		case "article":
-			return kind, id, "https://zhuanlan.zhihu.com/p/" + id
-		case "pin":
-			return kind, id, "https://www.zhihu.com/pin/" + id
-		}
+	if link := zhihuContentURL(kind, id); validID(id) && link != "" {
+		return kind, id, link
 	}
 	if safe {
 		return kind, action, action
