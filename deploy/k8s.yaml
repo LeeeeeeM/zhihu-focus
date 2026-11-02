@@ -1,0 +1,153 @@
+# 可提交的部署清单。私有仓库、命名空间和密钥放在 k8s.local.yaml，该文件不要提交。
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: zhihu-focus-frontend-config
+data:
+  default.conf: |
+    server {
+        listen 8080;
+        server_name _;
+        root /usr/local/openresty/nginx/html;
+
+        location = / {
+            return 302 /zh/recommend;
+        }
+
+        location ^~ /zh/api/ {
+            proxy_pass http://zhihu-focus-backend:8787/api/;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        location /zh/ {
+            try_files $uri $uri/ /zh/index.html;
+        }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zhihu-focus-backend
+  labels:
+    app.kubernetes.io/name: zhihu-focus-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: zhihu-focus-backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: zhihu-focus-backend
+    spec:
+      containers:
+        - name: backend
+          image: zhihu-focus-backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8787
+          env:
+            - name: ZHIFOCUS_ADDR
+              value: "0.0.0.0:8787"
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zhihu-focus-backend
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: zhihu-focus-backend
+  ports:
+    - name: http
+      port: 8787
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zhihu-focus-frontend
+  labels:
+    app.kubernetes.io/name: zhihu-focus-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: zhihu-focus-frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: zhihu-focus-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: zhihu-focus-frontend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /zh/
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /zh/
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+              readOnly: true
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: zhihu-focus-frontend-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zhihu-focus-frontend
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: zhihu-focus-frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

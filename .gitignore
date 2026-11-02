@@ -9,3 +9,4 @@ backend/tmp/
 backend/.env
 .playwright-cli/
 .docker-build/
+deploy/k8s.local.yaml
