@@ -75,6 +75,15 @@ test('question answers follow the shared auto-load setting and stop on duplicate
     assert.match(dom.window.document.body.textContent || '', /继续加载回答/, 'duplicate page pauses automatic loading');
     await act(async () => { useZhihuStore.setState({ autoLoad: false }); });
     assert.match(dom.window.document.body.textContent || '', /继续加载回答/);
+    await act(async () => { useZhihuStore.setState({ question: { ...useZhihuStore.getState().question!, metadataLimited: true } }); });
+    assert.match(dom.window.document.body.textContent || '', /统计信息暂不可用/);
+    assert.doesNotMatch(dom.window.document.querySelector('.question-stats')?.textContent || '', /0 人关注|0 条评论/);
+    assert.ok(dom.window.document.querySelector('.question-answer-card'));
+    await act(async () => { useZhihuStore.setState({ question: null, questionError: '详情暂不可用' }); });
+    assert.ok(dom.window.document.querySelector('.question-answer-card'), 'answers remain readable when question detail fails');
+    const moreButton = dom.window.document.querySelector<HTMLButtonElement>('.load-question-answers')!;
+    await act(async () => { moreButton.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); });
+    assert.equal(requests, 3, 'pagination works without question metadata');
   } finally {
     await act(async () => root.unmount());
     zhihuService.getQuestion = oldQuestion;

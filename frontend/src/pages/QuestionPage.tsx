@@ -9,6 +9,7 @@ import { UserAvatar } from '../components/UserAvatar';
 export default function QuestionPage() {
   const { id = '' } = useParams();
   const autoLoad = useZhihuStore(state => state.autoLoad);
+  const questionId = useZhihuStore(state => state.questionId);
   const question = useZhihuStore(state => state.question);
   const questionLoading = useZhihuStore(state => state.questionLoading);
   const questionError = useZhihuStore(state => state.questionError);
@@ -37,40 +38,45 @@ export default function QuestionPage() {
 
   const loadMoreAutomatically = useCallback(async () => {
     const before = useZhihuStore.getState();
-    if (!before.autoLoad || before.questionAnswersMoreLoading || before.question?.id !== id) return;
+    if (!before.autoLoad || before.questionAnswersMoreLoading || before.questionId !== id) return;
     const countBefore = before.questionAnswers.length;
     await loadMore();
     const after = useZhihuStore.getState();
-    if (after.question?.id === id && after.questionAnswers.length <= countBefore) setAutoLoadArmed(false);
+    if (after.questionId === id && after.questionAnswers.length <= countBefore) setAutoLoadArmed(false);
   }, [id, loadMore]);
 
   useEffect(() => {
     const target = loadSentinel.current;
-    if (!target || !autoLoad || !autoLoadArmed || !answers.length || !hasMore || answersLoading || moreLoading || question?.id !== id) return;
+    if (!target || !autoLoad || !autoLoadArmed || !answers.length || !hasMore || answersLoading || moreLoading || questionId !== id) return;
     let active = true;
     const observer = new IntersectionObserver(entries => {
       if (active && entries.some(entry => entry.isIntersecting)) void loadMoreAutomatically();
     }, { rootMargin: '240px 0px' });
     observer.observe(target);
     return () => { active = false; observer.disconnect(); };
-  }, [autoLoad, autoLoadArmed, answers.length, hasMore, answersLoading, moreLoading, question?.id, id, loadMoreAutomatically]);
+  }, [autoLoad, autoLoadArmed, answers.length, hasMore, answersLoading, moreLoading, questionId, id, loadMoreAutomatically]);
 
   return <div className="question-page">
-    {questionError && <div className="error-notice">{questionError} <Button type="link" onClick={() => void loadQuestion(id)}>重试</Button></div>}
+    {questionError && <div className="error-notice">{questionError} <a href={`https://www.zhihu.com/question/${id}`} target="_blank" rel="noopener noreferrer">查看知乎原页</a> <Button type="link" onClick={() => void loadQuestion(id)}>重试</Button></div>}
     {questionLoading && !question ? <div className="loading-state"><Spin/><span>正在读取知乎问题…</span></div> : question && <>
       <section className="question-heading">
         <div className="eyebrow"><span className="eyebrow-line"/> ZHIHU QUESTION</div>
         <h1>{question.title}</h1>
         <div className="question-stats">
           {question.author && <span>提问者：{question.author}</span>}
-          <span>{question.answerCount.toLocaleString()} 个回答</span>
-          <span><Users size={14}/>{question.followerCount.toLocaleString()} 人关注</span>
-          <span><MessageCircle size={14}/>{question.commentCount.toLocaleString()} 条评论</span>
+          {!question.metadataLimited && <>
+            <span>{question.answerCount.toLocaleString()} 个回答</span>
+            <span><Users size={14}/>{question.followerCount.toLocaleString()} 人关注</span>
+            <span><MessageCircle size={14}/>{question.commentCount.toLocaleString()} 条评论</span>
+          </>}
         </div>
+        {question.metadataLimited && <p>问题补充说明及统计信息暂不可用。<a href={question.url} target="_blank" rel="noopener noreferrer">查看知乎原页</a></p>}
         {(question.detailHtml || question.detail) && <RichContent className="question-description" html={question.detailHtml} text={question.detail}/>}
         {question.topics.length > 0 && <div className="question-topics">{question.topics.map(topic => <Tag key={topic}>{topic}</Tag>)}</div>}
       </section>
-      <div className="question-answers-heading"><div><div className="eyebrow small">ANSWERS</div><h2>问题下的回答</h2></div><span>{question.answerCount.toLocaleString()} 个回答</span></div>
+    </>}
+    <>
+      <div className="question-answers-heading"><div><div className="eyebrow small">ANSWERS</div><h2>问题下的回答</h2></div>{question && !question.metadataLimited && <span>{question.answerCount.toLocaleString()} 个回答</span>}</div>
       {answersError && <div className="error-notice">{answersError}</div>}
       {answersLoading && answers.length === 0 ? <div className="loading-state"><Spin/><span>正在加载回答…</span></div> : answers.length
         ? <div className="question-answer-list">{answers.map((answer, index) => <article className="question-answer-card" key={answer.id}>
@@ -84,11 +90,11 @@ export default function QuestionPage() {
             </div>
           </div>
         </article>)}</div>
-        : !answersError && <Empty className="page-empty" description="这个问题暂时没有可展示的回答"/>}
+        : !answersError && !questionLoading && <Empty className="page-empty" description="这个问题暂时没有可展示的回答"/>}
       {hasMore && (autoLoad && autoLoadArmed && answers.length
         ? <div className="load-sentinel" ref={loadSentinel} aria-live="polite">{moreLoading ? <><Spin size="small"/> 正在加载更多回答…</> : '继续向下滚动以加载'}</div>
         : <Button className="load-question-answers" type="text" onClick={() => void loadMore()} loading={moreLoading}>继续加载回答　↓</Button>)}
-    </>}
+    </>
     {!questionLoading && !question && !questionError && <Empty className="page-empty" description="暂时无法读取这个问题"/>}
   </div>;
 }

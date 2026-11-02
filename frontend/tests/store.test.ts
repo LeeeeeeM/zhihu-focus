@@ -68,7 +68,7 @@ test('a previous question-page failure cannot alter the new question pagination'
   let resolveNew!: (response: Response) => void;
   const oldPage = new Promise<Response>((_, reject) => { rejectOld = reject; });
   const newPage = new Promise<Response>(resolve => { resolveNew = resolve; });
-  useZhihuStore.setState({ question: { id: '1' } as NonNullable<ReturnType<typeof useZhihuStore.getState>['question']>, questionAnswers: [], questionAnswersCursor: 'old', questionAnswersHasMore: true, questionAnswersMoreLoading: false });
+  useZhihuStore.setState({ questionId: '1', question: { id: '1' } as NonNullable<ReturnType<typeof useZhihuStore.getState>['question']>, questionAnswers: [], questionAnswersCursor: 'old', questionAnswersHasMore: true, questionAnswersMoreLoading: false });
   globalThis.fetch = async input => {
     const path = String(input);
     if (path.includes('/api/question/answers?id=1&cursor=')) return oldPage;

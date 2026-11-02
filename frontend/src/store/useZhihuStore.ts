@@ -48,6 +48,7 @@ type Store = {
   commentsMoreLoading: boolean;
   commentRepliesLoading: Record<string, boolean>;
   commentRepliesErrors: Record<string, string>;
+  questionId: string;
   question: QuestionInfo | null;
   questionLoading: boolean;
   questionError: string;
@@ -93,7 +94,7 @@ export const useZhihuStore = create<Store>((set, get) => ({
   drawerOpen: false, contentType: null, contentId: '', detail: null, detailLoading: false, detailError: '',
   comments: [], commentsLoading: false, commentsError: '', commentsCursor: '', commentsHasMore: false, commentsMoreLoading: false,
   commentRepliesLoading: {}, commentRepliesErrors: {},
-  question: null, questionLoading: false, questionError: '', questionAnswers: [], questionAnswersLoading: false,
+  questionId: '', question: null, questionLoading: false, questionError: '', questionAnswers: [], questionAnswersLoading: false,
   questionAnswersError: '', questionAnswersCursor: '', questionAnswersHasMore: false, questionAnswersMoreLoading: false,
 
   initialize: async () => {
@@ -255,7 +256,7 @@ export const useZhihuStore = create<Store>((set, get) => ({
 
   loadQuestion: async id => {
     const version = ++questionRequestVersion;
-    set({ question: null, questionLoading: true, questionError: '', questionAnswers: [], questionAnswersLoading: true,
+    set({ questionId: id, question: null, questionLoading: true, questionError: '', questionAnswers: [], questionAnswersLoading: true,
       questionAnswersError: '', questionAnswersCursor: '', questionAnswersHasMore: false, questionAnswersMoreLoading: false });
     const questionTask = zhihuService.getQuestion(id)
       .then(question => { if (version === questionRequestVersion) set({ question }); })
@@ -269,25 +270,24 @@ export const useZhihuStore = create<Store>((set, get) => ({
   },
 
   loadMoreQuestionAnswers: async () => {
-    const { question, questionAnswersCursor, questionAnswersMoreLoading } = get();
-    if (!question || !questionAnswersCursor || questionAnswersMoreLoading) return;
-    const id = question.id;
+    const { questionId: id, questionAnswersCursor, questionAnswersMoreLoading } = get();
+    if (!id || !questionAnswersCursor || questionAnswersMoreLoading) return;
     const version = questionRequestVersion;
     set({ questionAnswersMoreLoading: true, questionAnswersError: '' });
     try {
       const page = await zhihuService.getQuestionAnswers(id, questionAnswersCursor);
       set(state => {
-        if (version !== questionRequestVersion || state.question?.id !== id) return {};
+        if (version !== questionRequestVersion || state.questionId !== id) return {};
         const seen = new Set(state.questionAnswers.map(item => item.id));
         const fresh = page.items.filter(item => { if (seen.has(item.id)) return false; seen.add(item.id); return true; });
         return { questionAnswers: [...state.questionAnswers, ...fresh], questionAnswersCursor: page.nextCursor || '', questionAnswersHasMore: page.hasMore };
       });
     } catch (error) {
-      set(state => version === questionRequestVersion && state.question?.id === id
+      set(state => version === questionRequestVersion && state.questionId === id
         ? { questionAnswersError: error instanceof Error ? error.message : '加载更多回答失败' }
         : {});
     } finally {
-      set(state => version === questionRequestVersion && state.question?.id === id
+      set(state => version === questionRequestVersion && state.questionId === id
         ? { questionAnswersMoreLoading: false }
         : {});
     }

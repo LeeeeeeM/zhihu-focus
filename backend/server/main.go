@@ -68,18 +68,19 @@ type ContentDetail struct {
 	URL          string `json:"url"`
 }
 type QuestionInfo struct {
-	ID            string   `json:"id"`
-	Title         string   `json:"title"`
-	Detail        string   `json:"detail"`
-	DetailHTML    string   `json:"detailHtml,omitempty"`
-	Author        string   `json:"author"`
-	CreatedAt     string   `json:"createdAt"`
-	UpdatedAt     string   `json:"updatedAt"`
-	AnswerCount   int      `json:"answerCount"`
-	FollowerCount int      `json:"followerCount"`
-	CommentCount  int      `json:"commentCount"`
-	Topics        []string `json:"topics"`
-	URL           string   `json:"url"`
+	MetadataLimited bool     `json:"metadataLimited,omitempty"`
+	ID              string   `json:"id"`
+	Title           string   `json:"title"`
+	Detail          string   `json:"detail"`
+	DetailHTML      string   `json:"detailHtml,omitempty"`
+	Author          string   `json:"author"`
+	CreatedAt       string   `json:"createdAt"`
+	UpdatedAt       string   `json:"updatedAt"`
+	AnswerCount     int      `json:"answerCount"`
+	FollowerCount   int      `json:"followerCount"`
+	CommentCount    int      `json:"commentCount"`
+	Topics          []string `json:"topics"`
+	URL             string   `json:"url"`
 }
 type QuestionAnswer struct {
 	ID           string `json:"id"`
@@ -421,7 +422,13 @@ func getQuestionDetail(ctx context.Context, client *http.Client, cookie, id stri
 	endpoint := "https://www.zhihu.com/api/v4/questions/" + id + "?include=detail,excerpt,created,updated_time,answer_count,follower_count,comment_count,author,topics"
 	b, err := zhihuWebGet(ctx, client, cookie, webURL, endpoint)
 	if err != nil {
-		return QuestionInfo{}, err
+		var upstream *zhihuContentError
+		if !errors.As(err, &upstream) || upstream.status != http.StatusForbidden || upstream.code != 10003 {
+			return QuestionInfo{}, err
+		}
+		// This endpoint requires a client signature. The answer endpoint still
+		// exposes the question title; do not invent statistics it does not expose.
+		return getQuestionSummary(ctx, client, cookie, id)
 	}
 	var raw questionResponse
 	if err = json.Unmarshal(b, &raw); err != nil {
@@ -438,6 +445,29 @@ func getQuestionDetail(ctx context.Context, client *http.Client, cookie, id stri
 		}
 	}
 	return QuestionInfo{ID: id, Title: raw.Title, Detail: plainText(detail), DetailHTML: detail, Author: raw.Author.Name, CreatedAt: formatUnix(raw.Created), UpdatedAt: formatUnix(raw.UpdatedTime), AnswerCount: raw.AnswerCount, FollowerCount: raw.FollowerCount, CommentCount: raw.CommentCount, Topics: topics, URL: webURL}, nil
+}
+
+func getQuestionSummary(ctx context.Context, client *http.Client, cookie, id string) (QuestionInfo, error) {
+	webURL := "https://www.zhihu.com/question/" + id
+	endpoint := "https://www.zhihu.com/api/v4/questions/" + id + "/answers?include=question&limit=1&offset=0&sort_by=default"
+	b, err := zhihuWebGet(ctx, client, cookie, webURL, endpoint)
+	if err != nil {
+		return QuestionInfo{}, err
+	}
+	var env struct {
+		Data []struct {
+			Question questionResponse `json:"question"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(b, &env); err != nil {
+		return QuestionInfo{}, fmt.Errorf("无法解析问题摘要：%w", err)
+	}
+	for _, answer := range env.Data {
+		if rawID(answer.Question.ID) == id && strings.TrimSpace(answer.Question.Title) != "" {
+			return QuestionInfo{ID: id, Title: answer.Question.Title, Topics: []string{}, URL: webURL, MetadataLimited: true}, nil
+		}
+	}
+	return QuestionInfo{}, newAPIStatusError(http.StatusServiceUnavailable, "知乎暂不支持读取此问题详情，且回答列表中没有可用的问题标题，请查看知乎原页")
 }
 
 func getQuestionAnswers(ctx context.Context, client *http.Client, cookie, id, cursor string) (QuestionAnswerPage, error) {
@@ -576,6 +606,19 @@ func getCommentReplies(ctx context.Context, client *http.Client, cookie, content
 	return commentPageFromResponse(raw), nil
 }
 
+type zhihuContentError struct {
+	status int
+	code   int
+	body   string
+}
+
+func (e *zhihuContentError) Error() string {
+	if e.status == http.StatusForbidden && e.code == 10003 {
+		return "知乎暂不支持当前方式读取此内容，请查看知乎原页"
+	}
+	return fmt.Sprintf("知乎内容接口返回 HTTP %d：%s", e.status, e.body)
+}
+
 func zhihuWebGet(ctx context.Context, client *http.Client, cookie, referer, endpoint string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -593,7 +636,13 @@ func zhihuWebGet(ctx context.Context, client *http.Client, cookie, referer, endp
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("知乎内容接口返回 HTTP %d：%s", resp.StatusCode, safeBody(b))
+		var envelope struct {
+			Error struct {
+				Code int `json:"code"`
+			} `json:"error"`
+		}
+		_ = json.Unmarshal(b, &envelope)
+		return nil, &zhihuContentError{status: resp.StatusCode, code: envelope.Error.Code, body: safeBody(b)}
 	}
 	return b, nil
 }

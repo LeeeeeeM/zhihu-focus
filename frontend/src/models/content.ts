@@ -9,6 +9,7 @@ export type ContentDetail = {
   createdAt: string; voteUpCount: number; commentCount: number; url: string;
 };
 export type QuestionInfo = {
+  metadataLimited?: boolean;
   id: string; title: string; detail: string; detailHtml?: string; author: string;
   createdAt: string; updatedAt: string; answerCount: number;
   followerCount: number; commentCount: number; topics: string[]; url: string;
