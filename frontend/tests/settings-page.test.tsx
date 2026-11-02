@@ -86,7 +86,7 @@ test('settings controls update and persist reading preferences and theme', async
     assert.equal(copied.at(-1), 'other-tab-cookie-fixture');
     assert.doesNotMatch(dom.window.document.body.textContent || '', /复制失败/);
     for (const [label, key] of [
-      ['推荐、搜索和问题回答滚到底自动加载', 'zhihu-focus-global-auto-load'],
+      ['推荐、搜索、问题回答和浏览历史滚到底自动加载', 'zhihu-focus-global-auto-load'],
       ['隐藏用户头像', 'zhihu-focus-hide-user-avatars'],
       ['极简模式', 'zhihu-focus-minimal-mode'],
     ]) {

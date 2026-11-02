@@ -25,7 +25,7 @@ func TestDetailsPreserveRichContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client := fixtureClient(`{"content":` + string(encoded) + `,"detail":` + string(encoded) + `,"question":{"id":123,"title":"标题"}}`)
+	client := fixtureClient(`{"title":"标题","content":` + string(encoded) + `,"detail":` + string(encoded) + `,"question":{"id":123,"title":"标题"}}`)
 
 	answer, err := getAnswerDetail(context.Background(), client, "cookie", "123")
 	if err != nil {

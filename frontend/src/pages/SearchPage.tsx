@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button, Empty, Input, Spin, Tooltip } from 'antd';
 import { RefreshCw, Search as SearchIcon } from 'lucide-react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { SearchCard } from '../components/ContentCard';
 import { useZhihuStore } from '../store/useZhihuStore';
-import type { ContentOpenType } from '../models/content';
+import { useContentOpener } from '../hooks/useContentOpener';
+import { useAutoLoad } from '../hooks/useAutoLoad';
 
 export default function SearchPage() {
-  const autoLoad = useZhihuStore(state => state.autoLoad);
   const [searchParams, setSearchParams] = useSearchParams();
   const urlQuery = searchParams.get('q') || '';
   const [query, setQuery] = useState('');
@@ -23,14 +23,10 @@ export default function SearchPage() {
   const searchQuery = useZhihuStore(state => state.searchQuery);
   const search = useZhihuStore(state => state.search);
   const loadMoreSearch = useZhihuStore(state => state.loadMoreSearch);
-  const openContent = useZhihuStore(state => state.openContent);
-  const [autoLoadArmed, setAutoLoadArmed] = useState(false);
+  const handleOpen = useContentOpener();
   const [headingTruncated, setHeadingTruncated] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
-  const loadSentinel = useRef<HTMLDivElement>(null);
-  const queryRef = useRef(urlQuery);
-  const navigate = useNavigate();
-  queryRef.current = urlQuery;
+  const { sentinel: loadSentinel, automatic, pause } = useAutoLoad({ hasItems: results.length > 0, hasMore, loading, moreLoading, error: error || moreError, resetKey: urlQuery, loadMore: loadMoreSearch });
 
   useLayoutEffect(() => {
     const heading = headingRef.current;
@@ -45,47 +41,13 @@ export default function SearchPage() {
   useEffect(() => {
     setQuery(urlQuery);
     setSubmittedQuery(urlQuery);
-    setAutoLoadArmed(false);
+    pause();
     window.scrollTo(0, 0);
     if (urlQuery && searchQuery === urlQuery) return;
     void search(urlQuery);
-  }, [urlQuery, search, searchQuery]);
-
-  useEffect(() => {
-    const armAfterScroll = () => { if (window.scrollY > 0) setAutoLoadArmed(true); };
-    window.addEventListener('scroll', armAfterScroll, { passive: true });
-    return () => window.removeEventListener('scroll', armAfterScroll);
-  }, []);
-
-  const loadMoreAutomatically = useCallback(async () => {
-    const state = useZhihuStore.getState();
-    if (!state.autoLoad || state.searchMoreLoading || queryRef.current !== urlQuery) return;
-    const countBefore = useZhihuStore.getState().searchResults.length;
-    const freshCount = await loadMoreSearch();
-    if (queryRef.current !== urlQuery) return;
-    if (freshCount === 0 || useZhihuStore.getState().searchResults.length <= countBefore) setAutoLoadArmed(false);
-  }, [loadMoreSearch, urlQuery]);
-
-  useEffect(() => {
-    const target = loadSentinel.current;
-    if (!target || !autoLoad || !autoLoadArmed || !results.length || !hasMore || loading || moreLoading) return;
-    let active = true;
-    const observer = new IntersectionObserver(entries => {
-      if (active && entries.some(entry => entry.isIntersecting)) void loadMoreAutomatically();
-    }, { rootMargin: '240px 0px' });
-    observer.observe(target);
-    return () => { active = false; observer.disconnect(); };
-  }, [autoLoad, autoLoadArmed, results.length, hasMore, loading, moreLoading, loadMoreAutomatically]);
+  }, [urlQuery, search, searchQuery, pause]);
 
   function submit(value = query) { setSearchParams(value.trim() ? { q: value.trim() } : {}); }
-
-  const handleOpen = (type: ContentOpenType, id: string) => {
-    if (type === 'question') {
-      navigate(`/questions/${id}`);
-      return;
-    }
-    void openContent(type, id);
-  };
 
   const headingText = submittedQuery ? `关于「${submittedQuery}」` : '搜索知乎';
 
@@ -109,10 +71,10 @@ export default function SearchPage() {
             <h2 ref={headingRef} tabIndex={headingTruncated ? 0 : undefined}>{headingText}</h2>
           </Tooltip>
         </div>
-        <div className="search-result-actions">
+        <div className="search-result-actions section-actions">
           <span className="result-count">{loading ? '搜索中…' : `${results.length} 条结果`}</span>
           {searchSource === 'access_secret' && <span className="search-source">{searchUsedFallback ? 'Access Secret 兜底' : 'Access Secret'}</span>}
-          <Button type="text" icon={<RefreshCw size={13}/>} onClick={() => { setAutoLoadArmed(false); window.scrollTo(0, 0); void search(submittedQuery); }} loading={loading} disabled={!submittedQuery.trim()}>重新搜索</Button>
+          <Button type="text" icon={<RefreshCw size={13}/>} onClick={() => { pause(); window.scrollTo(0, 0); void search(submittedQuery); }} loading={loading} disabled={!submittedQuery.trim()}>重新搜索</Button>
         </div>
       </div>
       {error && <div className="error-notice">{error}</div>}
@@ -120,7 +82,7 @@ export default function SearchPage() {
       {loading ? <div className="loading-state"><Spin/><span>正在搜索知乎…</span></div> : results.length
         ? results.map(result => <SearchCard key={`${result.kind}:${result.id}`} item={result} onOpen={handleOpen}/>)
         : <Empty className="page-empty" image={<SearchIcon size={26}/>} description={error ? '请检查知乎凭证或稍后重试' : submittedQuery ? '还没有找到相关内容，试试更短的关键词' : '输入关键词开始搜索'}/>}
-      {hasMore && (autoLoad && autoLoadArmed && results.length
+      {hasMore && (automatic
         ? <div className="load-sentinel" ref={loadSentinel} aria-live="polite">{moreLoading ? <><Spin size="small"/> 正在加载更多搜索结果…</> : '继续向下滚动以加载'}</div>
         : <Button className="load-more" type="text" onClick={() => void loadMoreSearch()} loading={moreLoading}>继续搜索　↓</Button>)}
       {!loading && !hasMore && results.length > 0 && !error && <div className="feed-end">已经到底了</div>}

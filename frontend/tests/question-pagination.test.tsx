@@ -40,7 +40,7 @@ test('question answers follow the shared auto-load setting and stop on duplicate
   zhihuService.getQuestion = async () => ({ id: '123', title: '问题', detail: '', author: '', createdAt: '', updatedAt: '', answerCount: 1, followerCount: 0, commentCount: 0, topics: [], url: '' });
   zhihuService.getQuestionAnswers = async () => {
     requests += 1;
-    return { items: [{ id: '1', author: '作者', avatar: '', excerpt: '回答', createdAt: '', voteUpCount: 0, commentCount: 0 }], nextCursor: 'next', hasMore: true };
+    return { items: [{ id: '1', author: '作者', avatar: '', excerpt: '回答', createdAt: '', voteUpCount: 0, commentCount: 0 }], nextCursor: `next-${requests}`, hasMore: true };
   };
   useZhihuStore.setState({ autoLoad: true, openContent: async (type, id) => { opened.push(`${type}:${id}`); } });
   const root = createRoot(dom.window.document.getElementById('root')!);
@@ -52,7 +52,7 @@ test('question answers follow the shared auto-load setting and stop on duplicate
     assert.equal(openButton.tagName, 'BUTTON');
     assert.equal(openButton.type, 'button');
     assert.ok(openButton.getAttribute('aria-label'));
-    const originalLink = card.querySelector<HTMLAnchorElement>('a')!;
+    const originalLink = card.querySelector<HTMLAnchorElement>('a[href^="https://www.zhihu.com/answer/"]')!;
     assert.equal(originalLink.target, '_blank');
     originalLink.addEventListener('click', event => event.preventDefault());
     await act(async () => { originalLink.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true })); });

@@ -14,7 +14,7 @@ export function saveZhihuCookie(cookie: string) {
   try {
     window.localStorage.setItem(zhihuCookieKey, cookie);
     window.localStorage.removeItem(legacySearchCookieKey);
-    window.dispatchEvent(new Event(zhihuCookieChangedEvent));
+    window.dispatchEvent(new window.Event(zhihuCookieChangedEvent));
     return true;
   } catch {
     return false;
@@ -25,7 +25,7 @@ export function removeZhihuCookie() {
   try {
     window.localStorage.removeItem(zhihuCookieKey);
     window.localStorage.removeItem(legacySearchCookieKey);
-    window.dispatchEvent(new Event(zhihuCookieChangedEvent));
+    window.dispatchEvent(new window.Event(zhihuCookieChangedEvent));
     return true;
   } catch {
     return false;

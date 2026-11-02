@@ -20,8 +20,6 @@ export default function SettingsPage() {
   const imageDisplayMode = useZhihuStore(state => state.imageDisplayMode);
   const setImageDisplayMode = useZhihuStore(state => state.setImageDisplayMode);
   const searchQuery = useZhihuStore(state => state.searchQuery);
-  const search = useZhihuStore(state => state.search);
-  const refreshFeed = useZhihuStore(state => state.refreshFeed);
   const searchError = useZhihuStore(state => state.searchError);
   const searchLoading = useZhihuStore(state => state.searchLoading);
   const feedLoading = useZhihuStore(state => state.feedLoading);
@@ -56,8 +54,6 @@ export default function SettingsPage() {
     setCookieDraft('');
     setSettingsError('');
     setMessage(searchQuery ? `Cookie 已保存，正在刷新推荐和搜索「${searchQuery}」。` : 'Cookie 已保存，正在刷新推荐内容。');
-    void refreshFeed();
-    if (searchQuery) void search(searchQuery);
   }
 
   function clearCookie() {
@@ -66,8 +62,6 @@ export default function SettingsPage() {
     setCookieDraft('');
     setSettingsError('');
     setMessage(searchQuery ? 'Cookie 已清除，正在按无个人 Cookie 的方式刷新推荐和搜索。' : 'Cookie 已清除，正在刷新推荐内容。');
-    void refreshFeed();
-    if (searchQuery) void search(searchQuery);
   }
 
   async function copyCookie() {
@@ -161,8 +155,8 @@ export default function SettingsPage() {
         <span>图片位置会显示此提示</span>
       </div>
       <div className="reading-preference-row auto-load-setting">
-        <div><h2><ChevronsDown size={18}/>滚到底自动加载</h2><p>推荐、搜索和问题回答共用此设置，关闭时可手动加载更多。</p></div>
-        <Switch checked={autoLoad} onChange={setAutoLoad} aria-label="推荐、搜索和问题回答滚到底自动加载"/>
+        <div><h2><ChevronsDown size={18}/>滚到底自动加载</h2><p>推荐、搜索、问题回答和浏览历史共用此设置，关闭时可手动加载更多。</p></div>
+        <Switch checked={autoLoad} onChange={setAutoLoad} aria-label="推荐、搜索、问题回答和浏览历史滚到底自动加载"/>
       </div>
       <div className="reading-preference-row auto-load-setting">
         <div><h2><UserRound size={18}/>隐藏用户头像</h2><p>开启后，用户头像统一显示为“知”。</p></div>

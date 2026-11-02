@@ -22,8 +22,10 @@ export type QuestionAnswerPage = { items: QuestionAnswer[]; nextCursor?: string;
 export type CommentItem = {
   id: string; content: string; contentHtml?: string; author: string; avatar: string;
   createdAt: string; likeCount: number; replyCount: number; replies?: CommentItem[];
-  repliesCursor?: string; repliesHasMore?: boolean;
+  repliesCursor?: string; repliesHasMore?: boolean; repliesLoaded?: boolean;
 };
 export type CommentPage = { items: CommentItem[]; nextCursor?: string; hasMore: boolean };
 export type ContentType = 'answer' | 'article';
 export type ContentOpenType = ContentType | 'question';
+export type HistoryItem = { id: string; kind: string; title: string; excerpt: string; author: string; time: string; url: string };
+export type HistoryPage = { items: HistoryItem[]; nextCursor?: string; hasMore: boolean };

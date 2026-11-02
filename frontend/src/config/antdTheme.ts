@@ -22,7 +22,7 @@ export function createAntdTheme(color: string): ThemeConfig {
     colorFillSecondary: '#f1f2ee',
     controlOutline: `${palette.primary}29`,
     borderRadius: 8,
-    fontFamily: "'DM Sans', 'Noto Sans SC', sans-serif",
+    fontFamily: 'var(--app-font-family)',
   },
   components: {
     Button: {

@@ -45,6 +45,12 @@ test('other tabs synchronize preferences and refresh data when the Cookie change
     assert.deepEqual(counts, { feed: 1, search: 1, question: 2 });
     await act(async () => { dom.window.dispatchEvent(new dom.window.StorageEvent('storage', { key: 'zhihu-focus-search-cookie' })); });
     assert.deepEqual(counts, { feed: 1, search: 1, question: 2 }, 'unchanged effective Cookie must not reload again');
+    const { saveZhihuCookie } = await import('../src/services/searchCredential');
+    await act(async () => { useZhihuStore.setState({ comments: [{ id: 'previous-account' } as never], questionAnswers: [{ id: 'previous-account', author: '旧作者', avatar: '', excerpt: '', createdAt: '', voteUpCount: 0, commentCount: 0 }] }); });
+    await act(async () => { saveZhihuCookie('fixture-c'); });
+    assert.deepEqual(counts, { feed: 2, search: 2, question: 3 }, 'same-tab Cookie changes reload the same data as storage events');
+    assert.deepEqual(useZhihuStore.getState().comments, []);
+    assert.deepEqual(useZhihuStore.getState().questionAnswers, []);
     await act(async () => {
       dom.window.localStorage.setItem('zhihu-focus-minimal-mode', 'true');
       dom.window.dispatchEvent(new dom.window.StorageEvent('storage', { key: 'zhihu-focus-minimal-mode' }));

@@ -2,10 +2,231 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { useZhihuStore } from '../src/store/useZhihuStore';
 import type { FeedItem } from '../src/models/content';
+import { JSDOM } from 'jsdom';
 
 function item(kind: FeedItem['kind'], id: string): FeedItem {
   return { id, kind, title: '标题', category: '推荐', excerpt: '', author: '作者', stats: '', time: '', url: '' };
 }
+
+test('account invalidation clears all private state and rejects pending old responses', async () => {
+  const previousFetch = globalThis.fetch;
+  let finish!: (response: Response) => void;
+  globalThis.fetch = async () => new Promise(resolve => { finish = resolve; });
+  try {
+    const pending = useZhihuStore.getState().refreshFeed();
+    useZhihuStore.setState({ searchResults: [{ id: 'old' } as never], drawerOpen: true, detail: { id: 'old' } as never, comments: [{ id: 'old' } as never], questionAnswers: [{ id: 'old' } as never] });
+    useZhihuStore.getState().invalidateAccount();
+    finish(Response.json({ items: [item('回答', 'old')], nextCursor: 'old', hasMore: true }));
+    await pending;
+    const state = useZhihuStore.getState();
+    assert.deepEqual(state.feed, []);
+    assert.deepEqual(state.searchResults, []);
+    assert.deepEqual(state.comments, []);
+    assert.deepEqual(state.questionAnswers, []);
+    assert.equal(state.drawerOpen, false);
+    assert.equal(state.detail, null);
+  } finally { globalThis.fetch = previousFetch; }
+});
+
+test('exhausted reply pagination stops even when the upstream total includes unavailable replies', async () => {
+  const previousFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; return Response.json({ items: [{ id: '2', content: '回复' }], hasMore: false }); };
+  useZhihuStore.setState({ contentType: 'answer', contentId: '1', comments: [{ id: '1', replyCount: 5, repliesHasMore: true } as never], commentRepliesLoading: {} });
+  try {
+    await useZhihuStore.getState().loadCommentReplies('1');
+    await useZhihuStore.getState().loadCommentReplies('1');
+    assert.equal(calls, 1);
+    assert.equal(useZhihuStore.getState().comments[0].replyCount, 5, 'do not invent a new upstream total');
+  } finally { globalThis.fetch = previousFetch; }
+});
+
+test('successful content opens report read with the opening account and do not wait for reporting', async () => {
+  const previousFetch = globalThis.fetch;
+  const previousWindow = globalThis.window;
+  const dom = new JSDOM('', { url: 'http://localhost' });
+  globalThis.window = dom.window as unknown as Window & typeof globalThis;
+  dom.window.localStorage.setItem('zhihu-focus-cookie', 'd_c0=opening-account');
+  let resolveReport!: (response: Response) => void;
+  const pendingReport = new Promise<Response>(resolve => { resolveReport = resolve; });
+  const reports: { path: string; init?: RequestInit }[] = [];
+  const historyWrites: { path: string; init?: RequestInit }[] = [];
+  globalThis.fetch = async (input, init) => {
+    const path = String(input);
+    if (path.startsWith('/api/read?')) { reports.push({ path, init }); return pendingReport; }
+    if (path.startsWith('/api/history?')) { historyWrites.push({ path, init }); return Response.json({ success: true }); }
+    if (path.startsWith('/api/detail?')) return Response.json({ id: '123', title: '正文' });
+    if (path.startsWith('/api/comments?')) return Response.json({ items: [], hasMore: false });
+    throw new Error(`Unexpected request: ${path}`);
+  };
+  try {
+    await useZhihuStore.getState().openContent('answer', '123');
+    assert.equal(useZhihuStore.getState().detail?.title, '正文');
+    assert.equal(useZhihuStore.getState().detailLoading, false);
+    assert.equal(reports.length, 1);
+    assert.equal(reports[0].path, '/api/read?type=answer&id=123');
+    assert.equal(reports[0].init?.method, 'POST');
+    assert.equal(new Headers(reports[0].init?.headers).get('X-Zhihu-Cookie'), 'd_c0=opening-account');
+    assert.equal(historyWrites.length, 1);
+    assert.equal(historyWrites[0].path, '/api/history?type=answer&id=123');
+    assert.equal(historyWrites[0].init?.method, 'POST');
+    assert.equal(new Headers(historyWrites[0].init?.headers).get('X-Zhihu-Cookie'), 'd_c0=opening-account');
+    resolveReport(Response.json({ success: true }));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(useZhihuStore.getState().readingReportError, '');
+  } finally { globalThis.fetch = previousFetch; globalThis.window = previousWindow; dom.window.close(); }
+});
+
+test('read reporting failure remains separate from readable content and retries on reopen', async () => {
+  const previousFetch = globalThis.fetch;
+  const previousWindow = globalThis.window;
+  const dom = new JSDOM('', { url: 'http://localhost' });
+  globalThis.window = dom.window as unknown as Window & typeof globalThis;
+  dom.window.localStorage.setItem('zhihu-focus-cookie', 'd_c0=fixture');
+  let reports = 0;
+  globalThis.fetch = async input => {
+    const path = String(input);
+    if (path.startsWith('/api/read?')) {
+      reports++;
+      return reports === 1 ? Response.json({ error: '同步失败' }, { status: 502 }) : Response.json({ success: true });
+    }
+    if (path.startsWith('/api/history?')) return Response.json({ success: true });
+    if (path.startsWith('/api/detail?')) return Response.json({ id: '456', title: '文章正文' });
+    return Response.json({ items: [], hasMore: false });
+  };
+  try {
+    await useZhihuStore.getState().openContent('article', '456');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(useZhihuStore.getState().readingReportError, '同步失败');
+    assert.equal(useZhihuStore.getState().detailError, '');
+    assert.equal(useZhihuStore.getState().detail?.title, '文章正文');
+    await useZhihuStore.getState().openContent('article', '456');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(reports, 2);
+    assert.equal(useZhihuStore.getState().readingReportError, '');
+  } finally { globalThis.fetch = previousFetch; globalThis.window = previousWindow; dom.window.close(); }
+});
+
+test('failed, closed, superseded and changed-account detail loads never report read', async () => {
+  const previousFetch = globalThis.fetch;
+  const previousWindow = globalThis.window;
+  const dom = new JSDOM('', { url: 'http://localhost' });
+  globalThis.window = dom.window as unknown as Window & typeof globalThis;
+  let reports = 0;
+  let resolveDetail!: (response: Response) => void;
+  globalThis.fetch = async input => {
+    const path = String(input);
+    if (path.startsWith('/api/read?') || path.startsWith('/api/history?')) { reports++; return Response.json({ success: true }); }
+    if (path.startsWith('/api/detail?')) return new Promise<Response>(resolve => { resolveDetail = resolve; });
+    return Response.json({ items: [], hasMore: false });
+  };
+  try {
+    for (const scenario of ['failed', 'closed', 'superseded', 'changed-account', 'no-cookie']) {
+      dom.window.localStorage.setItem('zhihu-focus-cookie', scenario === 'no-cookie' ? '' : 'd_c0=fixture');
+      const task = useZhihuStore.getState().openContent('answer', '123');
+      const finishOld = resolveDetail;
+      let nextTask: Promise<void> | undefined;
+      if (scenario === 'closed') useZhihuStore.getState().closeDrawer();
+      if (scenario === 'changed-account') dom.window.localStorage.setItem('zhihu-focus-cookie', 'd_c0=other');
+      if (scenario === 'superseded') nextTask = useZhihuStore.getState().openContent('article', '456');
+      finishOld(scenario === 'failed' ? Response.json({ error: '正文失败' }, { status: 502 }) : Response.json({ id: '123' }));
+      await task;
+      if (nextTask) { resolveDetail(Response.json({ error: '正文失败' }, { status: 502 })); await nextTask; }
+      await new Promise(resolve => setTimeout(resolve, 0));
+      assert.equal(reports, 0, scenario);
+    }
+  } finally { globalThis.fetch = previousFetch; globalThis.window = previousWindow; dom.window.close(); }
+});
+
+test('a delayed report failure cannot alter a newer drawer', async () => {
+  const previousFetch = globalThis.fetch;
+  const previousWindow = globalThis.window;
+  const dom = new JSDOM('', { url: 'http://localhost' });
+  globalThis.window = dom.window as unknown as Window & typeof globalThis;
+  dom.window.localStorage.setItem('zhihu-focus-cookie', 'd_c0=fixture');
+  let finishOldReport!: (response: Response) => void;
+  const pending = new Promise<Response>(resolve => { finishOldReport = resolve; });
+  globalThis.fetch = async input => {
+    const path = String(input);
+    if (path === '/api/read?type=answer&id=1') return pending;
+    if (path.startsWith('/api/read?')) return Response.json({ success: true });
+    if (path.startsWith('/api/history?')) return Response.json({ success: true });
+    if (path.startsWith('/api/detail?')) return Response.json({ id: path.endsWith('id=1') ? '1' : '2' });
+    return Response.json({ items: [], hasMore: false });
+  };
+  try {
+    await useZhihuStore.getState().openContent('answer', '1');
+    await useZhihuStore.getState().openContent('answer', '2');
+    finishOldReport(Response.json({ error: '旧上报失败' }, { status: 502 }));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(useZhihuStore.getState().contentId, '2');
+    assert.equal(useZhihuStore.getState().readingReportError, '');
+  } finally { globalThis.fetch = previousFetch; globalThis.window = previousWindow; dom.window.close(); }
+});
+
+test('history writes are independent of read reports, retry after failure, and notify after success', async () => {
+  const previousFetch = globalThis.fetch;
+  const previousWindow = globalThis.window;
+  const dom = new JSDOM('', { url: 'http://localhost' });
+  globalThis.window = dom.window as unknown as Window & typeof globalThis;
+  dom.window.localStorage.setItem('zhihu-focus-cookie', 'd_c0=fixture');
+  let writes = 0, notifications = 0;
+  dom.window.addEventListener('zhihu-focus-history-changed', () => { notifications++; });
+  globalThis.fetch = async input => {
+    const path = String(input);
+    if (path.startsWith('/api/history?')) {
+      writes++;
+      return writes === 1 ? Response.json({ error: '保存失败' }, { status: 502 }) : Response.json({ success: true });
+    }
+    if (path.startsWith('/api/read?')) return Response.json({ error: '已读失败' }, { status: 502 });
+    if (path.startsWith('/api/detail?')) return Response.json({ id: '123', title: '正文' });
+    return Response.json({ items: [], hasMore: false });
+  };
+  try {
+    await useZhihuStore.getState().openContent('answer', '123');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(useZhihuStore.getState().detail?.title, '正文');
+    assert.equal(useZhihuStore.getState().detailError, '');
+    assert.equal(useZhihuStore.getState().readingReportError, '已读失败');
+    assert.equal(useZhihuStore.getState().historyWriteError, '保存失败');
+    assert.equal(notifications, 0);
+    await useZhihuStore.getState().openContent('answer', '123');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(writes, 2);
+    assert.equal(useZhihuStore.getState().historyWriteError, '');
+    assert.equal(notifications, 1);
+  } finally { globalThis.fetch = previousFetch; globalThis.window = previousWindow; dom.window.close(); }
+});
+
+test('a delayed history write cannot pollute a new drawer or refresh another account', async () => {
+  const previousFetch = globalThis.fetch;
+  const previousWindow = globalThis.window;
+  const dom = new JSDOM('', { url: 'http://localhost' });
+  globalThis.window = dom.window as unknown as Window & typeof globalThis;
+  dom.window.localStorage.setItem('zhihu-focus-cookie', 'd_c0=first');
+  let finish!: (response: Response) => void;
+  const pending = new Promise<Response>(resolve => { finish = resolve; });
+  let notifications = 0;
+  dom.window.addEventListener('zhihu-focus-history-changed', () => { notifications++; });
+  globalThis.fetch = async input => {
+    const path = String(input);
+    if (path.startsWith('/api/history?')) return path.endsWith('id=1') ? pending : Response.json({ success: true });
+    if (path.startsWith('/api/read?')) return Response.json({ success: true });
+    if (path.startsWith('/api/detail?')) return Response.json({ id: '2' });
+    return Response.json({ items: [], hasMore: false });
+  };
+  try {
+    await useZhihuStore.getState().openContent('answer', '1');
+    dom.window.localStorage.setItem('zhihu-focus-cookie', 'd_c0=second');
+    await useZhihuStore.getState().openContent('answer', '2');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(notifications, 1);
+    finish(Response.json({ error: '旧历史保存失败' }, { status: 502 }));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(useZhihuStore.getState().historyWriteError, '');
+    assert.equal(notifications, 1);
+  } finally { globalThis.fetch = previousFetch; globalThis.window = previousWindow; dom.window.close(); }
+});
 
 test('failed refresh does not leave the previous account feed or cursor visible', async () => {
   const previousFetch = globalThis.fetch;

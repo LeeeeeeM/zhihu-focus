@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect } from 'react';
 import { Button, Empty, Spin, Tag } from 'antd';
 import { ExternalLink, MessageCircle, Users } from 'lucide-react';
 import { useParams } from 'react-router-dom';
+import { ContentTabLink } from '../components/ContentTabLink';
 import { useZhihuStore } from '../store/useZhihuStore';
+import { useAutoLoad } from '../hooks/useAutoLoad';
 import { RichContent } from '../components/RichContent';
 import { UserAvatar } from '../components/UserAvatar';
 
 export default function QuestionPage() {
   const { id = '' } = useParams();
-  const autoLoad = useZhihuStore(state => state.autoLoad);
   const questionId = useZhihuStore(state => state.questionId);
   const question = useZhihuStore(state => state.question);
   const questionLoading = useZhihuStore(state => state.questionLoading);
@@ -21,40 +22,11 @@ export default function QuestionPage() {
   const loadQuestion = useZhihuStore(state => state.loadQuestion);
   const loadMore = useZhihuStore(state => state.loadMoreQuestionAnswers);
   const openContent = useZhihuStore(state => state.openContent);
-  const [autoLoadArmed, setAutoLoadArmed] = useState(false);
-  const loadSentinel = useRef<HTMLDivElement>(null);
-
+  const { sentinel: loadSentinel, automatic } = useAutoLoad({ hasItems: answers.length > 0, hasMore: hasMore && questionId === id, loading: answersLoading, moreLoading, error: answersError, resetKey: id, loadMore });
   useEffect(() => {
-    setAutoLoadArmed(false);
     window.scrollTo(0, 0);
     if (id) void loadQuestion(id);
   }, [id, loadQuestion]);
-
-  useEffect(() => {
-    const armAfterScroll = () => { if (window.scrollY > 0) setAutoLoadArmed(true); };
-    window.addEventListener('scroll', armAfterScroll, { passive: true });
-    return () => window.removeEventListener('scroll', armAfterScroll);
-  }, []);
-
-  const loadMoreAutomatically = useCallback(async () => {
-    const before = useZhihuStore.getState();
-    if (!before.autoLoad || before.questionAnswersMoreLoading || before.questionId !== id) return;
-    const countBefore = before.questionAnswers.length;
-    await loadMore();
-    const after = useZhihuStore.getState();
-    if (after.questionId === id && after.questionAnswers.length <= countBefore) setAutoLoadArmed(false);
-  }, [id, loadMore]);
-
-  useEffect(() => {
-    const target = loadSentinel.current;
-    if (!target || !autoLoad || !autoLoadArmed || !answers.length || !hasMore || answersLoading || moreLoading || questionId !== id) return;
-    let active = true;
-    const observer = new IntersectionObserver(entries => {
-      if (active && entries.some(entry => entry.isIntersecting)) void loadMoreAutomatically();
-    }, { rootMargin: '240px 0px' });
-    observer.observe(target);
-    return () => { active = false; observer.disconnect(); };
-  }, [autoLoad, autoLoadArmed, answers.length, hasMore, answersLoading, moreLoading, questionId, id, loadMoreAutomatically]);
 
   return <div className="question-page">
     {questionError && <div className="error-notice">{questionError} <a href={`https://www.zhihu.com/question/${id}`} target="_blank" rel="noopener noreferrer">查看知乎原页</a> <Button type="link" onClick={() => void loadQuestion(id)}>重试</Button></div>}
@@ -89,12 +61,13 @@ export default function QuestionPage() {
             <div className="question-answer-meta"><UserAvatar size={25} src={answer.avatar} name={answer.author}/><b>{answer.author || '知乎用户'}</b><span>{answer.createdAt}</span><span>{answer.voteUpCount.toLocaleString()} 赞同 · {answer.commentCount.toLocaleString()} 评论</span></div>
             <p>{answer.excerpt || '打开查看完整回答'}</p>
             <div className="question-answer-actions">
+              <ContentTabLink type="answer" id={answer.id}/>
               <a href={`https://www.zhihu.com/answer/${answer.id}`} target="_blank" rel="noopener noreferrer">查看原文 <ExternalLink size={13}/></a>
             </div>
           </div>
         </article>)}</div>
         : !answersError && !questionLoading && <Empty className="page-empty" description="这个问题暂时没有可展示的回答"/>}
-      {hasMore && (autoLoad && autoLoadArmed && answers.length
+      {hasMore && (automatic
         ? <div className="load-sentinel" ref={loadSentinel} aria-live="polite">{moreLoading ? <><Spin size="small"/> 正在加载更多回答…</> : '继续向下滚动以加载'}</div>
         : <Button className="load-question-answers" type="text" onClick={() => void loadMore()} loading={moreLoading}>继续加载回答　↓</Button>)}
     </>

@@ -1,4 +1,5 @@
 import { ExternalLink } from 'lucide-react';
+import { ContentTabLink } from './ContentTabLink';
 import type { ContentOpenType, FeedItem, SearchResult } from '../models/content';
 import { UserAvatar } from './UserAvatar';
 
@@ -9,6 +10,7 @@ type CardFooterProps = {
   stats: string;
   url: string;
   hasDetail: boolean;
+  content?: ReadableContent | null;
 };
 
 function feedReadableContent(item: FeedItem): ReadableContent | null {
@@ -33,7 +35,7 @@ function contentKindLabel(kind: string) {
   return kind;
 }
 
-function CardFooter({ author, avatar, stats, url, hasDetail }: CardFooterProps) {
+function CardFooter({ author, avatar, stats, url, hasDetail, content }: CardFooterProps) {
   return <div className="card-footer">
     <div className="author">
       <UserAvatar size={22} src={avatar} name={author}/>
@@ -41,6 +43,7 @@ function CardFooter({ author, avatar, stats, url, hasDetail }: CardFooterProps) 
       <span>{stats}</span>
     </div>
     <div className="card-actions">
+      {content && <ContentTabLink type={content.type} id={content.id}/>}
       {url && <a className="detail-link" href={url} target="_blank" rel="noopener noreferrer">{hasDetail ? '查看原文' : '在知乎打开'} <ExternalLink size={14}/></a>}
     </div>
   </div>;
@@ -57,7 +60,7 @@ export function FeedCard({ item, onOpen }: { item: FeedItem; onOpen: (type: Cont
       {readable ? <button className="content-link content-title-button" onClick={() => onOpen(readable.type, readable.id)}>{item.title}</button> : <h2>{item.title}</h2>}
       <p>{item.excerpt}</p>
     </div></div>
-    <CardFooter author={item.author} avatar={item.avatar} stats={item.stats} url={item.url} hasDetail={Boolean(readable)}/>
+    <CardFooter author={item.author} avatar={item.avatar} stats={item.stats} url={item.url} hasDetail={Boolean(readable)} content={readable}/>
   </article>;
 }
 
@@ -73,6 +76,6 @@ export function SearchCard({ item, onOpen }: { item: SearchResult; onOpen: (type
       {readable ? <button className="content-link content-title-button" onClick={() => onOpen(readable.type, readable.id)}>{item.title}</button> : <h2>{item.title}</h2>}
       <p className="search-excerpt">{item.excerpt}</p>
     </div></div>
-    <CardFooter author={item.author} avatar={item.avatar} stats={item.stats} url={item.url} hasDetail={Boolean(readable)}/>
+    <CardFooter author={item.author} avatar={item.avatar} stats={item.stats} url={item.url} hasDetail={Boolean(readable)} content={readable}/>
   </article>;
 }

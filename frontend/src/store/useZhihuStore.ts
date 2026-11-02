@@ -1,5 +1,9 @@
 import { create } from 'zustand';
-import { zhihuService } from '../services/zhihu';
+import { historyChangedEvent, zhihuService } from '../services/zhihu';
+import { readZhihuCookie } from '../services/searchCredential';
+import { useHistoryStore } from './useHistoryStore';
+import { contentKey, idKey, mergeUnique, nextPageState } from '../services/pagination';
+import { displayTime } from '../services/time';
 import { readAutoLoadPreference, readHideUserAvatars, readImageDisplayMode, readMinimalMode, saveAutoLoadPreference, saveHideUserAvatars, saveImageDisplayMode, saveMinimalMode } from '../services/readingPreferences';
 import type { ImageDisplayMode } from '../services/readingPreferences';
 import { normalizeThemeColor, readThemeColor, saveThemeColor } from '../services/themePreferences';
@@ -35,11 +39,14 @@ type Store = {
   searchError: string;
   searchMoreError: string;
   drawerOpen: boolean;
+  readerMode: 'drawer' | 'page' | null;
   contentType: ContentType | null;
   contentId: string;
   detail: ContentDetail | null;
   detailLoading: boolean;
   detailError: string;
+  readingReportError: string;
+  historyWriteError: string;
   comments: CommentItem[];
   commentsLoading: boolean;
   commentsError: string;
@@ -59,16 +66,17 @@ type Store = {
   questionAnswersHasMore: boolean;
   questionAnswersMoreLoading: boolean;
   initialize: () => Promise<void>;
+  invalidateAccount: () => void;
   refreshFeed: () => Promise<void>;
-  loadMoreFeed: () => Promise<void>;
+  loadMoreFeed: () => Promise<number>;
   search: (query: string) => Promise<void>;
   loadMoreSearch: () => Promise<number>;
-  openContent: (type: ContentType, id: string) => Promise<void>;
+  openContent: (type: ContentType, id: string, mode?: 'drawer' | 'page') => Promise<void>;
   closeDrawer: () => void;
   loadMoreComments: () => Promise<void>;
   loadCommentReplies: (commentId: string) => Promise<void>;
   loadQuestion: (id: string) => Promise<void>;
-  loadMoreQuestionAnswers: () => Promise<void>;
+  loadMoreQuestionAnswers: () => Promise<number>;
 };
 
 let searchRequestVersion = 0;
@@ -91,7 +99,7 @@ export const useZhihuStore = create<Store>((set, get) => ({
   feed: [], feedSource: '', feedLoading: true, feedError: '', feedCursor: '', feedHasMore: false, feedMoreLoading: false,
   searchResults: [], searchQuery: '', searchSource: '', searchUsedFallback: false, searchCursor: '', searchHasMore: false,
   searchLoading: false, searchMoreLoading: false, searchError: '', searchMoreError: '',
-  drawerOpen: false, contentType: null, contentId: '', detail: null, detailLoading: false, detailError: '',
+  drawerOpen: false, readerMode: null, contentType: null, contentId: '', detail: null, detailLoading: false, detailError: '', readingReportError: '', historyWriteError: '',
   comments: [], commentsLoading: false, commentsError: '', commentsCursor: '', commentsHasMore: false, commentsMoreLoading: false,
   commentRepliesLoading: {}, commentRepliesErrors: {},
   questionId: '', question: null, questionLoading: false, questionError: '', questionAnswers: [], questionAnswersLoading: false,
@@ -102,34 +110,47 @@ export const useZhihuStore = create<Store>((set, get) => ({
     await get().refreshFeed();
   },
 
+  invalidateAccount: () => {
+    feedRequestVersion++; searchRequestVersion++; questionRequestVersion++; contentRequestVersion++;
+    set({
+      feed: [], feedSource: '', feedLoading: false, feedMoreLoading: false, feedError: '', feedCursor: '', feedHasMore: false,
+      searchResults: [], searchSource: '', searchUsedFallback: false, searchCursor: '', searchHasMore: false, searchLoading: false, searchMoreLoading: false, searchError: '', searchMoreError: '',
+      drawerOpen: false, readerMode: null, contentType: null, contentId: '', detail: null, detailLoading: false, detailError: '', readingReportError: '', historyWriteError: '',
+      comments: [], commentsLoading: false, commentsError: '', commentsCursor: '', commentsHasMore: false, commentsMoreLoading: false, commentRepliesLoading: {}, commentRepliesErrors: {},
+      questionId: '', question: null, questionLoading: false, questionError: '', questionAnswers: [], questionAnswersLoading: false, questionAnswersError: '', questionAnswersCursor: '', questionAnswersHasMore: false, questionAnswersMoreLoading: false,
+    });
+  },
+
   refreshFeed: async () => {
     const version = ++feedRequestVersion;
     set({ feed: [], feedCursor: '', feedHasMore: false, feedLoading: true, feedError: '', feedMoreLoading: false });
     try {
       const page = await zhihuService.getFeed();
-      if (version === feedRequestVersion) set({ feed: page.items, feedSource: page.source || 'recommendation', feedCursor: page.nextCursor || '', feedHasMore: page.hasMore });
+      if (version === feedRequestVersion) set({ feed: mergeUnique([], page.items, contentKey).items, feedSource: page.source || 'recommendation', feedCursor: nextPageState(page.nextCursor, page.hasMore).cursor, feedHasMore: nextPageState(page.nextCursor, page.hasMore).hasMore });
     } catch (error) {
       if (version === feedRequestVersion) set({ feedSource: '', feedError: error instanceof Error ? error.message : '加载推荐失败' });
     } finally { if (version === feedRequestVersion) set({ feedLoading: false }); }
   },
 
   loadMoreFeed: async () => {
-    const { feedCursor, feedLoading, feedMoreLoading } = get();
-    if (!feedCursor || feedLoading || feedMoreLoading) return;
+    const { feedCursor, feedHasMore, feedLoading, feedMoreLoading } = get();
+    if (!feedCursor || !feedHasMore || feedLoading || feedMoreLoading) return 0;
     const version = feedRequestVersion;
     set({ feedMoreLoading: true, feedError: '' });
+    let freshCount = 0;
     try {
       const page = await zhihuService.getFeed(feedCursor);
-      if (version !== feedRequestVersion) return;
+      if (version !== feedRequestVersion) return 0;
       set(state => {
         if (state.feedCursor !== feedCursor) return {};
-        const seen = new Set(state.feed.map(item => `${item.kind}:${item.id}`));
-        const fresh = page.items.filter(item => { const key = `${item.kind}:${item.id}`; if (seen.has(key)) return false; seen.add(key); return true; });
-        return { feed: [...state.feed, ...fresh], feedSource: page.source || state.feedSource, feedCursor: page.nextCursor || '', feedHasMore: page.hasMore };
+        const merged = mergeUnique(state.feed, page.items, contentKey);
+        freshCount = merged.freshCount;
+        return { feed: merged.items, feedSource: page.source || state.feedSource, feedCursor: nextPageState(page.nextCursor, page.hasMore, feedCursor).cursor, feedHasMore: nextPageState(page.nextCursor, page.hasMore, feedCursor).hasMore };
       });
     } catch (error) {
       if (version === feedRequestVersion) set({ feedError: error instanceof Error ? error.message : '加载推荐失败' });
     } finally { if (version === feedRequestVersion) set({ feedMoreLoading: false }); }
+    return freshCount;
   },
 
   search: async query => {
@@ -142,7 +163,7 @@ export const useZhihuStore = create<Store>((set, get) => ({
     set({ searchResults: [], searchQuery: normalizedQuery, searchSource: '', searchUsedFallback: false, searchCursor: '', searchHasMore: false, searchError: '', searchMoreError: '', searchLoading: true, searchMoreLoading: false });
     try {
       const page = await zhihuService.search({ query: normalizedQuery });
-      if (version === searchRequestVersion) set({ searchResults: page.items, searchCursor: page.nextCursor || '', searchHasMore: page.hasMore, searchSource: page.source || '', searchUsedFallback: page.usedFallback || false });
+      if (version === searchRequestVersion) set({ searchResults: mergeUnique([], page.items, contentKey).items, searchCursor: nextPageState(page.nextCursor, page.hasMore).cursor, searchHasMore: nextPageState(page.nextCursor, page.hasMore).hasMore, searchSource: page.source || '', searchUsedFallback: page.usedFallback || false });
     } catch (error) {
       if (version === searchRequestVersion) set({ searchError: error instanceof Error ? error.message : '搜索失败' });
     } finally { if (version === searchRequestVersion) set({ searchLoading: false }); }
@@ -159,10 +180,9 @@ export const useZhihuStore = create<Store>((set, get) => ({
       if (version !== searchRequestVersion) return 0;
       set(state => {
         if (state.searchQuery !== searchQuery || state.searchCursor !== searchCursor) return {};
-        const seen = new Set(state.searchResults.map(item => `${item.kind}:${item.id}`));
-        const fresh = page.items.filter(item => { const key = `${item.kind}:${item.id}`; if (seen.has(key)) return false; seen.add(key); return true; });
-        freshCount = fresh.length;
-        return { searchResults: [...state.searchResults, ...fresh], searchCursor: page.nextCursor || '', searchHasMore: page.hasMore, searchSource: page.source || state.searchSource, searchUsedFallback: page.usedFallback || state.searchUsedFallback };
+        const merged = mergeUnique(state.searchResults, page.items, contentKey);
+        freshCount = merged.freshCount;
+        return { searchResults: merged.items, searchCursor: nextPageState(page.nextCursor, page.hasMore, searchCursor).cursor, searchHasMore: nextPageState(page.nextCursor, page.hasMore, searchCursor).hasMore, searchSource: page.source || state.searchSource, searchUsedFallback: page.usedFallback || state.searchUsedFallback };
       });
     } catch (error) {
       if (version === searchRequestVersion) set({ searchMoreError: error instanceof Error ? error.message : '加载更多搜索结果失败' });
@@ -172,15 +192,37 @@ export const useZhihuStore = create<Store>((set, get) => ({
     return freshCount;
   },
 
-  openContent: async (type, id) => {
+  openContent: async (type, id, mode = 'drawer') => {
     const version = ++contentRequestVersion;
-    set({ drawerOpen: true, contentType: type, contentId: id, detail: null, detailError: '', detailLoading: true, comments: [], commentsError: '', commentsLoading: true, commentsCursor: '', commentsHasMore: false, commentsMoreLoading: false, commentRepliesLoading: {}, commentRepliesErrors: {} });
+    const cookie = readZhihuCookie().trim();
+    const isCurrent = () => version === contentRequestVersion && get().readerMode === mode && get().contentId === id && get().contentType === type && readZhihuCookie().trim() === cookie;
+    set({ drawerOpen: mode === 'drawer', readerMode: mode, contentType: type, contentId: id, detail: null, detailError: '', readingReportError: '', historyWriteError: '', detailLoading: true, comments: [], commentsError: '', commentsLoading: true, commentsCursor: '', commentsHasMore: false, commentsMoreLoading: false, commentRepliesLoading: {}, commentRepliesErrors: {} });
     const detailTask = zhihuService.getContentDetail(type, id)
-      .then(detail => set(state => version === contentRequestVersion && state.contentId === id && state.contentType === type ? { detail } : {}))
+      .then(detail => {
+        if (!isCurrent()) return;
+        set({ detail });
+        if (cookie) {
+          // Reporting must not delay reading or count stale/closed requests as reads.
+          void zhihuService.reportReading(type, id, cookie).catch(error => {
+            if (isCurrent()) set({ readingReportError: error instanceof Error ? error.message : '阅读状态同步失败' });
+          });
+          void zhihuService.addHistory(type, id, cookie).then(() => {
+            if (readZhihuCookie().trim() === cookie) {
+              useHistoryStore.getState().recordSaved(cookie, {
+                id, kind: type, title: detail.title, excerpt: detail.content?.slice(0, 240) || '', author: detail.author,
+                time: displayTime(new Date().toISOString()), url: detail.url,
+              });
+              window.dispatchEvent(new window.Event(historyChangedEvent));
+            }
+          }).catch(error => {
+            if (isCurrent()) set({ historyWriteError: error instanceof Error ? error.message : '浏览历史保存失败' });
+          });
+        }
+      })
       .catch(error => set(state => version === contentRequestVersion && state.contentId === id && state.contentType === type ? { detailError: error instanceof Error ? error.message : '读取内容失败' } : {}))
       .finally(() => set(state => version === contentRequestVersion && state.contentId === id && state.contentType === type ? { detailLoading: false } : {}));
     const commentsTask = zhihuService.getContentComments(type, id)
-      .then(page => set(state => version === contentRequestVersion && state.contentId === id && state.contentType === type ? { comments: page.items, commentsCursor: page.nextCursor || '', commentsHasMore: page.hasMore } : {}))
+      .then(page => set(state => version === contentRequestVersion && state.contentId === id && state.contentType === type ? { comments: mergeUnique([], page.items, idKey).items, commentsCursor: nextPageState(page.nextCursor, page.hasMore).cursor, commentsHasMore: nextPageState(page.nextCursor, page.hasMore).hasMore } : {}))
       .catch(error => set(state => version === contentRequestVersion && state.contentId === id && state.contentType === type ? { commentsError: error instanceof Error ? error.message : '读取评论失败' } : {}))
       .finally(() => set(state => version === contentRequestVersion && state.contentId === id && state.contentType === type ? { commentsLoading: false } : {}));
     await Promise.all([detailTask, commentsTask]);
@@ -188,21 +230,20 @@ export const useZhihuStore = create<Store>((set, get) => ({
 
   closeDrawer: () => {
     contentRequestVersion += 1;
-    set({ drawerOpen: false, commentsMoreLoading: false });
+    set({ drawerOpen: false, readerMode: null, commentsMoreLoading: false });
   },
 
   loadMoreComments: async () => {
-    const { contentType, contentId, commentsCursor, commentsMoreLoading } = get();
-    if (!contentType || !contentId || !commentsCursor || commentsMoreLoading) return;
+    const { contentType, contentId, commentsCursor, commentsHasMore, commentsMoreLoading } = get();
+    if (!contentType || !contentId || !commentsCursor || !commentsHasMore || commentsMoreLoading) return;
     const version = contentRequestVersion;
     set({ commentsMoreLoading: true, commentsError: '' });
     try {
       const page = await zhihuService.getContentComments(contentType, contentId, commentsCursor);
       set(state => {
         if (version !== contentRequestVersion || state.contentId !== contentId || state.contentType !== contentType) return {};
-        const seen = new Set(state.comments.map(comment => comment.id));
-        const fresh = page.items.filter(comment => { if (seen.has(comment.id)) return false; seen.add(comment.id); return true; });
-        return { comments: [...state.comments, ...fresh], commentsCursor: page.nextCursor || '', commentsHasMore: page.hasMore };
+        const merged = mergeUnique(state.comments, page.items, idKey);
+        return { comments: merged.items, commentsCursor: nextPageState(page.nextCursor, page.hasMore, commentsCursor).cursor, commentsHasMore: nextPageState(page.nextCursor, page.hasMore, commentsCursor).hasMore };
       });
     } catch (error) {
       set(state => version === contentRequestVersion && state.contentId === contentId && state.contentType === contentType
@@ -219,7 +260,7 @@ export const useZhihuStore = create<Store>((set, get) => ({
     const { contentType, contentId, comments, commentRepliesLoading } = get();
     const comment = comments.find(item => item.id === commentId);
     if (!contentType || !contentId || !comment || commentRepliesLoading[commentId]) return;
-    if (!comment.repliesHasMore && (comment.replies?.length || 0) >= comment.replyCount) return;
+    if ((comment.repliesLoaded && !comment.repliesHasMore) || (!comment.repliesHasMore && (comment.replies?.length || 0) >= comment.replyCount)) return;
     const version = contentRequestVersion;
     set(state => ({
       commentRepliesLoading: { ...state.commentRepliesLoading, [commentId]: true },
@@ -231,14 +272,16 @@ export const useZhihuStore = create<Store>((set, get) => ({
         if (version !== contentRequestVersion || state.contentId !== contentId || state.contentType !== contentType) return {};
         const current = state.comments.find(item => item.id === commentId);
         if (!current) return {};
-        const seen = new Set((current.replies || []).map(reply => reply.id));
-        const fresh = page.items.filter(reply => { if (seen.has(reply.id)) return false; seen.add(reply.id); return true; });
+        const merged = mergeUnique(current.replies || [], page.items, idKey);
+        const paging = nextPageState(page.nextCursor, page.hasMore, current.repliesCursor);
+
         return {
           comments: state.comments.map(item => item.id === commentId ? {
             ...item,
-            replies: [...(item.replies || []), ...fresh],
-            repliesCursor: page.nextCursor || '',
-            repliesHasMore: page.hasMore,
+            replies: merged.items,
+            repliesCursor: paging.cursor,
+            repliesHasMore: paging.hasMore,
+            repliesLoaded: true,
           } : item),
           commentRepliesErrors: { ...state.commentRepliesErrors, [commentId]: '' },
         };
@@ -263,24 +306,25 @@ export const useZhihuStore = create<Store>((set, get) => ({
       .catch(error => { if (version === questionRequestVersion) set({ questionError: error instanceof Error ? error.message : '读取问题失败' }); })
       .finally(() => { if (version === questionRequestVersion) set({ questionLoading: false }); });
     const answersTask = zhihuService.getQuestionAnswers(id)
-      .then(page => { if (version === questionRequestVersion) set({ questionAnswers: page.items, questionAnswersCursor: page.nextCursor || '', questionAnswersHasMore: page.hasMore }); })
+      .then(page => { if (version === questionRequestVersion) set({ questionAnswers: mergeUnique([], page.items, idKey).items, questionAnswersCursor: nextPageState(page.nextCursor, page.hasMore).cursor, questionAnswersHasMore: nextPageState(page.nextCursor, page.hasMore).hasMore }); })
       .catch(error => { if (version === questionRequestVersion) set({ questionAnswersError: error instanceof Error ? error.message : '读取问题回答失败' }); })
       .finally(() => { if (version === questionRequestVersion) set({ questionAnswersLoading: false }); });
     await Promise.all([questionTask, answersTask]);
   },
 
   loadMoreQuestionAnswers: async () => {
-    const { questionId: id, questionAnswersCursor, questionAnswersMoreLoading } = get();
-    if (!id || !questionAnswersCursor || questionAnswersMoreLoading) return;
+    const { questionId: id, questionAnswersCursor, questionAnswersHasMore, questionAnswersMoreLoading } = get();
+    if (!id || !questionAnswersCursor || !questionAnswersHasMore || questionAnswersMoreLoading) return 0;
     const version = questionRequestVersion;
     set({ questionAnswersMoreLoading: true, questionAnswersError: '' });
+    let freshCount = 0;
     try {
       const page = await zhihuService.getQuestionAnswers(id, questionAnswersCursor);
       set(state => {
         if (version !== questionRequestVersion || state.questionId !== id) return {};
-        const seen = new Set(state.questionAnswers.map(item => item.id));
-        const fresh = page.items.filter(item => { if (seen.has(item.id)) return false; seen.add(item.id); return true; });
-        return { questionAnswers: [...state.questionAnswers, ...fresh], questionAnswersCursor: page.nextCursor || '', questionAnswersHasMore: page.hasMore };
+        const merged = mergeUnique(state.questionAnswers, page.items, idKey);
+        freshCount = merged.freshCount;
+        return { questionAnswers: merged.items, questionAnswersCursor: nextPageState(page.nextCursor, page.hasMore, questionAnswersCursor).cursor, questionAnswersHasMore: nextPageState(page.nextCursor, page.hasMore, questionAnswersCursor).hasMore };
       });
     } catch (error) {
       set(state => version === questionRequestVersion && state.questionId === id
@@ -291,5 +335,6 @@ export const useZhihuStore = create<Store>((set, get) => ({
         ? { questionAnswersMoreLoading: false }
         : {});
     }
+    return freshCount;
   },
 }));

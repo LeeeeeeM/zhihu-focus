@@ -1,12 +1,14 @@
-import type { CommentPage, ContentDetail, ContentType, FeedPage, QuestionAnswerPage, QuestionInfo, SearchInput, SearchPageData, ServiceStatus } from '../models/content';
+import type { CommentPage, ContentDetail, ContentType, FeedPage, HistoryPage, QuestionAnswerPage, QuestionInfo, SearchInput, SearchPageData, ServiceStatus } from '../models/content';
 import { readZhihuCookie } from '../services/searchCredential';
 
 const inFlight = new Map<string, Promise<unknown>>();
 
-async function request<T>(path: string, init?: RequestInit, identity = ''): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, identity = '', fresh = false): Promise<T> {
   const method = (init?.method ?? 'GET').toUpperCase();
   const key = `${method}:${path}:${identity}`;
-  const pending = inFlight.get(key);
+  // A history refresh after a write must not reuse a GET started before the write.
+  const deduplicate = !fresh;
+  const pending = deduplicate ? inFlight.get(key) : undefined;
   if (pending) return pending as Promise<T>;
 
   const task = (async () => {
@@ -20,25 +22,42 @@ async function request<T>(path: string, init?: RequestInit, identity = ''): Prom
     return res.json() as Promise<T>;
   })();
 
-  inFlight.set(key, task);
+  if (deduplicate) inFlight.set(key, task);
   try { return await task; }
   finally { if (inFlight.get(key) === task) inFlight.delete(key); }
 }
 
 export const getStatus = () => request<ServiceStatus>('/api/health');
+let identityCookie = '';
+let identityVersion = 0;
 function cookieIdentity(cookie: string) {
-  let hash = 2166136261;
-  for (let index = 0; index < cookie.length; index += 1) hash = Math.imul(hash ^ cookie.charCodeAt(index), 16777619);
-  return `${cookie.length}:${(hash >>> 0).toString(36)}`;
+  if (cookie !== identityCookie) { identityCookie = cookie; identityVersion++; }
+  return String(identityVersion);
 }
 
 function cookieRequest<T>(path: string, cookie = readZhihuCookie()) {
   const normalizedCookie = cookie.trim();
-  const init = normalizedCookie ? { headers: { 'X-Zhihu-Cookie': normalizedCookie } } : undefined;
+  const init: RequestInit = { cache: 'no-store', ...(normalizedCookie ? { headers: { 'X-Zhihu-Cookie': normalizedCookie } } : {}) };
   return request<T>(path, init, normalizedCookie ? cookieIdentity(normalizedCookie) : '');
 }
 
 export const getFeed = (cursor?: string) => cookieRequest<FeedPage>(`/api/feed${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`);
+
+export const getHistory = (cookie: string, cursor?: string) => request<HistoryPage>(
+  `/api/history${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`,
+  { headers: { 'X-Zhihu-Cookie': cookie }, cache: 'no-store' }, cookieIdentity(cookie), true,
+);
+
+export const reportReading = (type: ContentType, id: string, cookie: string) => request<{ success: boolean }>(
+  `/api/read?type=${type}&id=${encodeURIComponent(id)}`,
+  { method: 'POST', headers: { 'X-Zhihu-Cookie': cookie } },
+  cookieIdentity(cookie),
+);
+
+export const addHistory = (type: ContentType, id: string, cookie: string) => request<{ success: boolean }>(
+  `/api/history?type=${type}&id=${encodeURIComponent(id)}`,
+  { method: 'POST', headers: { 'X-Zhihu-Cookie': cookie }, cache: 'no-store' }, cookieIdentity(cookie),
+);
 
 export const searchZhihu = ({ query, cursor, cookie }: SearchInput) => {
   const selectedCookie = cookie === undefined ? readZhihuCookie() : cookie;

@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { Dropdown, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
-import { Compass, Feather, PanelLeftClose, PanelLeftOpen, Search, Settings2 } from 'lucide-react';
+import { Compass, Feather, History, PanelLeftClose, PanelLeftOpen, Search, Settings2 } from 'lucide-react';
 import { ContentDrawer } from '../components/ContentDrawer';
 import { useZhihuStore } from '../store/useZhihuStore';
+import { useHistoryStore } from '../store/useHistoryStore';
 import { autoLoadStorageKey, hideUserAvatarsStorageKey, imageDisplayModeStorageKey, legacyFeedAutoLoadStorageKey, legacySearchAutoLoadStorageKey, legacyShowImagesStorageKey, minimalModeStorageKey, readAutoLoadPreference, readHideUserAvatars, readImageDisplayMode, readMinimalMode } from '../services/readingPreferences';
 import { readThemeColor, themeColorStorageKey } from '../services/themePreferences';
 import { isZhihuCookieStorageKey, readZhihuCookie, zhihuCookieChangedEvent } from '../services/searchCredential';
@@ -12,6 +13,8 @@ import RecommendationPage from './RecommendationPage';
 import QuestionPage from './QuestionPage';
 import SearchPage from './SearchPage';
 import SettingsPage from './SettingsPage';
+import HistoryPage from './HistoryPage';
+import ContentPage from './ContentPage';
 
 export default function App() {
   const initialize = useZhihuStore(state => state.initialize);
@@ -30,8 +33,25 @@ export default function App() {
 
   useEffect(() => { void initialize(); }, [initialize]);
   useEffect(() => {
+    useHistoryStore.getState().syncCookie();
     let currentCookie = readZhihuCookie();
-    const rememberLocalCookie = () => { currentCookie = readZhihuCookie(); };
+    const reloadCookieData = () => {
+      const cookie = readZhihuCookie();
+      if (cookie === currentCookie) return;
+      currentCookie = cookie;
+      useHistoryStore.getState().syncCookie();
+      const state = useZhihuStore.getState();
+      state.invalidateAccount();
+      void state.refreshFeed();
+      if (state.searchQuery) void state.search(state.searchQuery);
+      if (cookie && state.drawerOpen && state.contentType && state.contentId) void state.openContent(state.contentType, state.contentId);
+      const base = (import.meta.env?.BASE_URL || '/').replace(/\/$/, '');
+      const pathname = window.location.pathname;
+      const questionId = /^\/questions\/(\d+)\/?$/.exec(base && pathname.startsWith(`${base}/`) ? pathname.slice(base.length) : pathname)?.[1];
+      if (questionId) void state.loadQuestion(questionId);
+      const contentRoute = /^\/(answers|articles)\/(\d+)\/?$/.exec(base && pathname.startsWith(`${base}/`) ? pathname.slice(base.length) : pathname);
+      if (contentRoute) void state.openContent(contentRoute[1] === 'answers' ? 'answer' : 'article', contentRoute[2], 'page');
+    };
     const syncReadingPreferences = (event: StorageEvent) => {
       if (event.key === imageDisplayModeStorageKey || event.key === legacyShowImagesStorageKey || event.key === null) {
         useZhihuStore.setState({ imageDisplayMode: readImageDisplayMode() });
@@ -48,33 +68,20 @@ export default function App() {
       if (event.key === minimalModeStorageKey || event.key === null) {
         useZhihuStore.setState({ minimalMode: readMinimalMode() });
       }
-      if (isZhihuCookieStorageKey(event.key)) {
-        const cookie = readZhihuCookie();
-        if (cookie !== currentCookie) {
-          currentCookie = cookie;
-          const state = useZhihuStore.getState();
-          void state.refreshFeed();
-          if (state.searchQuery) void state.search(state.searchQuery);
-          if (state.drawerOpen && state.contentType && state.contentId) void state.openContent(state.contentType, state.contentId);
-          const base = (import.meta.env?.BASE_URL || '/').replace(/\/$/, '');
-          const pathname = window.location.pathname;
-          const questionId = /^\/questions\/(\d+)\/?$/.exec(base && pathname.startsWith(`${base}/`) ? pathname.slice(base.length) : pathname)?.[1];
-          if (questionId) void state.loadQuestion(questionId);
-        }
-      }
+      if (isZhihuCookieStorageKey(event.key)) reloadCookieData();
     };
     window.addEventListener('storage', syncReadingPreferences);
-    window.addEventListener(zhihuCookieChangedEvent, rememberLocalCookie);
+    window.addEventListener(zhihuCookieChangedEvent, reloadCookieData);
     return () => {
       window.removeEventListener('storage', syncReadingPreferences);
-      window.removeEventListener(zhihuCookieChangedEvent, rememberLocalCookie);
+      window.removeEventListener(zhihuCookieChangedEvent, reloadCookieData);
     };
   }, []);
   useEffect(() => {
     try { window.localStorage.setItem('zhihu-focus-sidebar-collapsed', String(sidebarCollapsed)); } catch { /* Storage is optional. */ }
   }, [sidebarCollapsed]);
 
-  const activePage = location.pathname.startsWith('/search') ? '搜索' : location.pathname.startsWith('/questions/') ? '问题详情' : location.pathname.startsWith('/settings') ? '设置' : '推荐';
+  const activePage = location.pathname.startsWith('/articles/') ? '文章详情' : location.pathname.startsWith('/answers/') ? '回答详情' : location.pathname.startsWith('/history') ? '浏览历史' : location.pathname.startsWith('/search') ? '搜索' : location.pathname.startsWith('/questions/') ? '问题详情' : location.pathname.startsWith('/settings') ? '设置' : '推荐';
   const profileMenu: MenuProps = {
     items: [{ key: 'settings', icon: <Settings2 size={15}/>, label: '设置与 Cookie' }],
     onClick: ({ key }) => { if (key === 'settings') navigate('/settings'); },
@@ -102,6 +109,9 @@ export default function App() {
       <Tooltip title={sidebarCollapsed ? '搜索' : undefined} placement="right" trigger={['hover', 'focus']}>
         <NavLink aria-label="搜索" to={searchQuery ? `/search?q=${encodeURIComponent(searchQuery)}` : '/search'} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><Search size={18}/><span>搜索</span></NavLink>
       </Tooltip>
+      <Tooltip title={sidebarCollapsed ? '浏览历史' : undefined} placement="right" trigger={['hover', 'focus']}>
+        <NavLink aria-label="浏览历史" to="/history" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><History size={18}/><span>浏览历史</span></NavLink>
+      </Tooltip>
     </aside>
     <main className={`main ${sidebarCollapsed ? 'main-sidebar-collapsed' : ''}`}>
       <header className="topbar"><div className="crumb">我的空间 <span>/</span> <b>{activePage}</b></div><div className="top-actions"><Dropdown menu={profileMenu} trigger={['click']} placement="bottomRight"><button className="user-settings-trigger" type="button" aria-label="打开用户设置"><span>用户设置</span><span className="top-avatar" style={hideUserAvatars ? { backgroundColor: 'var(--theme-surface)', color: 'var(--theme-text)' } : undefined}>{hideUserAvatars ? '知' : 'L'}</span></button></Dropdown></div></header>
@@ -110,7 +120,10 @@ export default function App() {
           <Route path="/" element={<Navigate to="/recommend" replace/>}/>
           <Route path="/recommend" element={<RecommendationPage/>}/>
           <Route path="/search" element={<SearchPage/>}/>
+          <Route path="/history" element={<HistoryPage/>}/>
           <Route path="/questions/:id" element={<QuestionPage/>}/>
+          <Route path="/answers/:id" element={<ContentPage type="answer"/>}/>
+          <Route path="/articles/:id" element={<ContentPage type="article"/>}/>
           <Route path="/settings" element={<SettingsPage/>}/>
           <Route path="*" element={<Navigate to="/recommend" replace/>}/>
         </Routes>

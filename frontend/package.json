@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "test": "tsx --test tests/*.test.ts tests/*.test.tsx",
     "dev": "vite",
     "typecheck": "tsc -p tsconfig.json",
     "test:rich-content": "tsx --test tests/rich-content.test.ts",
