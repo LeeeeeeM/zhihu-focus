@@ -70,9 +70,12 @@ export default function QuestionPage() {
             <span><MessageCircle size={14}/>{question.commentCount.toLocaleString()} 条评论</span>
           </>}
         </div>
-        {question.metadataLimited && <p>问题补充说明及统计信息暂不可用。<a href={question.url} target="_blank" rel="noopener noreferrer">查看知乎原页</a></p>}
+        {question.metadataLimited && <p className="question-metadata-notice">问题补充说明及统计信息暂不可用。</p>}
         {(question.detailHtml || question.detail) && <RichContent className="question-description" html={question.detailHtml} text={question.detail}/>}
         {question.topics.length > 0 && <div className="question-topics">{question.topics.map(topic => <Tag key={topic}>{topic}</Tag>)}</div>}
+        {question.metadataLimited && <div className="question-source-actions">
+          <a className="source-link" href={question.url} target="_blank" rel="noopener noreferrer">在知乎打开原文 <ExternalLink size={14}/></a>
+        </div>}
       </section>
     </>}
     <>
