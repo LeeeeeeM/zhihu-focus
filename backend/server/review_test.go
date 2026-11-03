@@ -39,6 +39,9 @@ func TestV5CommentsAndRepliesUseOneSchema(t *testing.T) {
 		if r.Header.Get("x-zse-96") == "" {
 			t.Fatal("web signature missing")
 		}
+		if strings.HasSuffix(r.URL.Path, "/child_comment") {
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"data":[{"id":"456","content":"回复","like_count":3,"author":{"name":"回复作者"}}],"paging":{"is_end":true}}`))}, nil
+		}
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body))}, nil
 	})}
 	page, err := getAnswerComments(context.Background(), client, "d_c0=fixture", "1", "")
@@ -46,11 +49,15 @@ func TestV5CommentsAndRepliesUseOneSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := page.Items[0]
-	if c.Author != "新版作者" || c.LikeCount != 0 || c.Replies[0].Author != "回复作者" || c.Replies[0].LikeCount != 3 || c.RepliesCursor == "" {
+	if c.Author != "新版作者" || c.LikeCount != 0 || len(c.Replies) != 0 || c.ReplyCount != 2 || !c.RepliesHasMore || c.RepliesCursor == "" {
 		t.Fatalf("bad v5 mapping: %#v", c)
 	}
-	if _, err = getCommentReplies(context.Background(), client, "d_c0=fixture", "answer", "1", c.ID, c.RepliesCursor); err != nil {
+	replies, err := getCommentReplies(context.Background(), client, "d_c0=fixture", "answer", "1", c.ID, c.RepliesCursor)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if len(replies.Items) != 1 || replies.Items[0].Author != "回复作者" || replies.Items[0].LikeCount != 3 {
+		t.Fatalf("bad reply mapping: %#v", replies)
 	}
 	if _, err = getArticleComments(context.Background(), client, "d_c0=fixture", "2", ""); err != nil {
 		t.Fatal(err)

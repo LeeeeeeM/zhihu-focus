@@ -36,7 +36,12 @@ func loadComments(ctx context.Context, client *http.Client, cookie, referer, bas
 	if raw.Data == nil {
 		return CommentPage{}, fmt.Errorf("知乎列表响应缺少 data 字段")
 	}
-	return commentPageFromResponse(raw), nil
+	page := commentPageFromResponse(raw)
+	if page.NextCursor == endpoint {
+		page.NextCursor = ""
+		page.HasMore = false
+	}
+	return page, nil
 }
 
 func commentPageFromResponse(raw commentsResponse) CommentPage {
@@ -46,7 +51,13 @@ func commentPageFromResponse(raw commentsResponse) CommentPage {
 			out = append(out, mapComment(c))
 		}
 	}
-	return CommentPage{Items: out, NextCursor: raw.Paging.Next, HasMore: !raw.Paging.IsEnd && raw.Paging.Next != ""}
+	// Zhihu may leave a next URL on the terminal page; is_end is authoritative.
+	hasMore := !raw.Paging.IsEnd && raw.Paging.Next != ""
+	nextCursor := raw.Paging.Next
+	if !hasMore {
+		nextCursor = ""
+	}
+	return CommentPage{Items: out, NextCursor: nextCursor, HasMore: hasMore}
 }
 
 func mapComment(c commentResponse) Comment {
@@ -66,14 +77,12 @@ func mapComment(c commentResponse) Comment {
 		replyCount = c.RepliesCount
 	}
 	item := Comment{ID: rawID(c.ID), Content: plainText(c.Content), ContentHTML: c.Content, Author: author, Avatar: avatar, CreatedAt: formatUnix(c.CreatedTime), LikeCount: likes, ReplyCount: replyCount}
-	for _, child := range c.ChildComments {
-		if validID(rawID(child.ID)) {
-			item.Replies = append(item.Replies, mapComment(child))
-		}
-	}
-	item.RepliesHasMore = item.ReplyCount > len(item.Replies)
-	if offset := rawID(c.ChildCommentNextOffset); item.RepliesHasMore && offset != "" {
-		item.RepliesCursor = "https://www.zhihu.com/api/v4/comment_v5/comment/" + item.ID + "/child_comment?" + url.Values{"offset": {offset}, "limit": {"10"}}.Encode()
+	// Inline child_comments are selected previews, not a prefix of the child
+	// endpoint's pagination order. Mixing them with a cursor page can skip or
+	// repeat replies. Load the reply list only through its own paginated endpoint.
+	item.RepliesHasMore = item.ReplyCount > 0
+	if item.RepliesHasMore {
+		item.RepliesCursor = "https://www.zhihu.com/api/v4/comment_v5/comment/" + item.ID + "/child_comment?" + url.Values{"offset": {"0"}, "limit": {"10"}}.Encode()
 	}
 	return item
 }

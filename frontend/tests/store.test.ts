@@ -41,6 +41,83 @@ test('exhausted reply pagination stops even when the upstream total includes una
   } finally { globalThis.fetch = previousFetch; }
 });
 
+test('reply pagination follows the cursor even when the initial total is stale', async () => {
+  const previousFetch = globalThis.fetch;
+  const requests: string[] = [];
+  globalThis.fetch = async input => {
+    requests.push(String(input));
+    return requests.length === 1
+      ? Response.json({ items: Array.from({ length: 10 }, (_, i) => ({ id: String(i + 1), content: '回复' })), nextCursor: 'next-page', hasMore: true })
+      : Response.json({ items: [{ id: '11', content: '新增回复' }], hasMore: false });
+  };
+  useZhihuStore.setState({ contentType: 'answer', contentId: '1', comments: [{ id: '100', replyCount: 3, repliesCursor: 'first-page', repliesHasMore: true } as never], commentRepliesLoading: {}, commentRepliesErrors: {} });
+  try {
+    await useZhihuStore.getState().loadCommentReplies('100');
+    assert.equal(useZhihuStore.getState().comments[0].replies?.length, 10);
+    assert.equal(useZhihuStore.getState().comments[0].repliesHasMore, true);
+    await useZhihuStore.getState().loadCommentReplies('100');
+    assert.equal(new URL(requests[1], 'http://localhost').searchParams.get('cursor'), 'next-page');
+    assert.equal(useZhihuStore.getState().comments[0].replies?.length, 11);
+    assert.equal(useZhihuStore.getState().comments[0].repliesHasMore, false);
+    await useZhihuStore.getState().loadCommentReplies('100');
+    assert.equal(requests.length, 2, 'one request per page and none after exhaustion');
+  } finally { globalThis.fetch = previousFetch; }
+});
+
+test('reply loading locks concurrent clicks and preserves the cursor for a failed-page retry', async () => {
+  const previousFetch = globalThis.fetch;
+  let reject!: (error: Error) => void;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    if (calls === 1) return new Promise<Response>((_, fail) => { reject = fail; });
+    return Response.json({ items: [{ id: '2', content: '回复' }], hasMore: false });
+  };
+  useZhihuStore.setState({ contentType: 'answer', contentId: '1', comments: [{ id: '100', replyCount: 1, repliesCursor: 'first-page', repliesHasMore: true } as never], commentRepliesLoading: {}, commentRepliesErrors: {} });
+  try {
+    const pending = useZhihuStore.getState().loadCommentReplies('100');
+    await useZhihuStore.getState().loadCommentReplies('100');
+    assert.equal(calls, 1);
+    reject(new Error('network failure'));
+    await pending;
+    assert.equal(useZhihuStore.getState().comments[0].repliesCursor, 'first-page');
+    assert.equal(useZhihuStore.getState().commentRepliesLoading['100'], false);
+    assert.equal(useZhihuStore.getState().commentRepliesErrors['100'], 'network failure');
+    await useZhihuStore.getState().loadCommentReplies('100');
+    assert.equal(calls, 2);
+    assert.equal(useZhihuStore.getState().comments[0].replies?.length, 1);
+    assert.equal(useZhihuStore.getState().commentRepliesErrors['100'], '');
+  } finally { globalThis.fetch = previousFetch; }
+});
+
+test('reply responses from an old reader cannot alter a new reader with the same comment ID', async () => {
+  const previousFetch = globalThis.fetch;
+  let finishOld!: (response: Response) => void;
+  let finishNew!: (response: Response) => void;
+  globalThis.fetch = async input => {
+    const path = String(input);
+    if (path.includes('/api/comment-replies?') && path.includes('contentId=1&')) return new Promise(resolve => { finishOld = resolve; });
+    if (path.includes('/api/comment-replies?')) return new Promise(resolve => { finishNew = resolve; });
+    if (path.includes('/api/detail?')) return Response.json({ id: '2', title: '新回答' });
+    if (path.includes('/api/comments?')) return Response.json({ items: [{ id: '100', replyCount: 1, repliesHasMore: true }], hasMore: false });
+    throw new Error(`Unexpected request: ${path}`);
+  };
+  useZhihuStore.setState({ contentType: 'answer', contentId: '1', comments: [{ id: '100', replyCount: 1, repliesHasMore: true } as never], commentRepliesLoading: {}, commentRepliesErrors: {} });
+  try {
+    const old = useZhihuStore.getState().loadCommentReplies('100');
+    await useZhihuStore.getState().openContent('answer', '2');
+    const current = useZhihuStore.getState().loadCommentReplies('100');
+    finishOld(Response.json({ items: [{ id: 'old' }], hasMore: false }));
+    await old;
+    assert.equal(useZhihuStore.getState().comments[0].replies, undefined);
+    assert.equal(useZhihuStore.getState().commentRepliesLoading['100'], true);
+    finishNew(Response.json({ items: [{ id: 'new' }], hasMore: false }));
+    await current;
+    assert.equal(useZhihuStore.getState().comments[0].replies?.[0].id, 'new');
+    assert.equal(useZhihuStore.getState().commentRepliesLoading['100'], false);
+  } finally { globalThis.fetch = previousFetch; }
+});
+
 test('successful content opens report read with the opening account and do not wait for reporting', async () => {
   const previousFetch = globalThis.fetch;
   const previousWindow = globalThis.window;

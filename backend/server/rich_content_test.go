@@ -52,17 +52,17 @@ func TestDetailsPreserveRichContent(t *testing.T) {
 
 func TestCommentsPreserveRichContent(t *testing.T) {
 	var raw commentsResponse
-	if err := json.Unmarshal([]byte(`{"data":[{"id":1,"content":"<img src=\"https://example.com/a.jpg\">","child_comments":[{"id":2,"content":"<a href=\"https://example.com\">链接</a>"}]}]}`), &raw); err != nil {
+	if err := json.Unmarshal([]byte(`{"data":[{"id":1,"content":"<img src=\"https://example.com/a.jpg\">"},{"id":2,"content":"<a href=\"https://example.com\">链接</a>"}]}`), &raw); err != nil {
 		t.Fatal(err)
 	}
 	page := commentPageFromResponse(raw)
-	if len(page.Items) != 1 || len(page.Items[0].Replies) != 1 {
+	if len(page.Items) != 2 {
 		t.Fatal("comment or reply missing")
 	}
 	if !strings.Contains(page.Items[0].ContentHTML, "https://example.com/a.jpg") {
 		t.Fatal("comment image missing")
 	}
-	if !strings.Contains(page.Items[0].Replies[0].ContentHTML, "https://example.com") {
+	if !strings.Contains(page.Items[1].ContentHTML, "https://example.com") {
 		t.Fatal("reply link missing")
 	}
 }
