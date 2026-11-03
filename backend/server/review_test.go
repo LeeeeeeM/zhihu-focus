@@ -52,7 +52,7 @@ func TestV5CommentsAndRepliesUseOneSchema(t *testing.T) {
 	if c.Author != "新版作者" || c.LikeCount != 0 || len(c.Replies) != 0 || c.ReplyCount != 2 || !c.RepliesHasMore || c.RepliesCursor == "" {
 		t.Fatalf("bad v5 mapping: %#v", c)
 	}
-	replies, err := getCommentReplies(context.Background(), client, "d_c0=fixture", "answer", "1", c.ID, c.RepliesCursor)
+	replies, err := getCommentReplies(context.Background(), client, "d_c0=fixture", "answer", "1", c.ID, c.RepliesCursor, replyProgress{})
 	if err != nil {
 		t.Fatal(err)
 	}

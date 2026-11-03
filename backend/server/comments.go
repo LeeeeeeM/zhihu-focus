@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 )
 
 func getAnswerComments(ctx context.Context, client *http.Client, cookie, id, cursor string) (CommentPage, error) {
@@ -57,7 +58,19 @@ func commentPageFromResponse(raw commentsResponse) CommentPage {
 	if !hasMore {
 		nextCursor = ""
 	}
-	return CommentPage{Items: out, NextCursor: nextCursor, HasMore: hasMore}
+	var total *int
+	for _, candidate := range []json.RawMessage{raw.Counts.TotalCounts, raw.Paging.Totals} {
+		var number json.Number
+		if json.Unmarshal(candidate, &number) != nil {
+			continue
+		}
+		value, err := strconv.Atoi(string(number))
+		if err == nil && value >= 0 {
+			total = &value
+			break
+		}
+	}
+	return CommentPage{Items: out, NextCursor: nextCursor, HasMore: hasMore, TotalCount: total}
 }
 
 func mapComment(c commentResponse) Comment {
@@ -87,6 +100,31 @@ func mapComment(c commentResponse) Comment {
 	return item
 }
 
-func getCommentReplies(ctx context.Context, client *http.Client, cookie, contentType, contentID, commentID, cursor string) (CommentPage, error) {
-	return loadComments(ctx, client, cookie, zhihuContentURL(contentType, contentID), "/api/v4/comment_v5/comment/"+commentID+"/child_comment", "?limit=10&offset=0", cursor, "知乎返回了无效的子评论分页地址", "无法解析评论回复")
+type replyProgress struct {
+	LoadedIDs  []string `json:"loadedIds"`
+	KnownTotal *int     `json:"knownTotal,omitempty"`
+}
+
+func getCommentReplies(ctx context.Context, client *http.Client, cookie, contentType, contentID, commentID, cursor string, progress replyProgress) (CommentPage, error) {
+	page, err := loadComments(ctx, client, cookie, zhihuContentURL(contentType, contentID), "/api/v4/comment_v5/comment/"+commentID+"/child_comment", "?limit=10&offset=0", cursor, "知乎返回了无效的子评论分页地址", "无法解析评论回复")
+	if err != nil {
+		return CommentPage{}, err
+	}
+	if page.TotalCount == nil {
+		page.TotalCount = progress.KnownTotal
+	}
+	// Progress is used only for completion, never to remove returned replies.
+	seen := make(map[string]struct{}, len(progress.LoadedIDs)+len(page.Items))
+	for _, id := range progress.LoadedIDs {
+		seen[id] = struct{}{}
+	}
+	for _, item := range page.Items {
+		seen[item.ID] = struct{}{}
+	}
+	// A smaller total is demonstrably stale; retain the upstream continuation.
+	if page.TotalCount != nil && len(seen) == *page.TotalCount {
+		page.HasMore = false
+		page.NextCursor = ""
+	}
+	return page, nil
 }

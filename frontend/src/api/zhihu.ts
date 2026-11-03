@@ -1,4 +1,4 @@
-import type { CommentPage, ContentDetail, ContentType, FeedPage, HistoryPage, QuestionAnswerPage, QuestionInfo, SearchInput, SearchPageData, ServiceStatus } from '../models/content';
+import type { CommentPage, ContentDetail, ContentType, FeedPage, HistoryPage, QuestionAnswerPage, QuestionInfo, ReplyProgress, SearchInput, SearchPageData, ServiceStatus } from '../models/content';
 import { readZhihuCookie } from '../services/searchCredential';
 
 const inFlight = new Map<string, Promise<unknown>>();
@@ -35,10 +35,12 @@ function cookieIdentity(cookie: string) {
   return String(identityVersion);
 }
 
-function cookieRequest<T>(path: string, cookie = readZhihuCookie()) {
+function cookieRequest<T>(path: string, cookie = readZhihuCookie(), options: RequestInit = {}) {
   const normalizedCookie = cookie.trim();
-  const init: RequestInit = { cache: 'no-store', ...(normalizedCookie ? { headers: { 'X-Zhihu-Cookie': normalizedCookie } } : {}) };
-  return request<T>(path, init, normalizedCookie ? cookieIdentity(normalizedCookie) : '');
+  const headers = new Headers(options.headers);
+  if (normalizedCookie) headers.set('X-Zhihu-Cookie', normalizedCookie);
+  const init: RequestInit = { ...options, cache: 'no-store', headers };
+  return request<T>(path, init, normalizedCookie ? cookieIdentity(normalizedCookie) : '', options.method === 'POST');
 }
 
 export const getFeed = (cursor?: string) => cookieRequest<FeedPage>(`/api/feed${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`);
@@ -65,6 +67,8 @@ export const searchZhihu = ({ query, cursor, cookie }: SearchInput) => {
 };
 export const getContentDetail = (type: ContentType, id: string) => cookieRequest<ContentDetail>(`/api/detail?type=${type}&id=${encodeURIComponent(id)}`);
 export const getContentComments = (type: ContentType, id: string, cursor?: string) => cookieRequest<CommentPage>(`/api/comments?type=${type}&id=${encodeURIComponent(id)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
-export const getCommentReplies = (type: ContentType, contentId: string, commentId: string, cursor?: string) => cookieRequest<CommentPage>(`/api/comment-replies?type=${type}&contentId=${encodeURIComponent(contentId)}&commentId=${encodeURIComponent(commentId)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
+export const getCommentReplies = (type: ContentType, contentId: string, commentId: string, cursor?: string, progress: ReplyProgress = { loadedIds: [] }) => cookieRequest<CommentPage>(`/api/comment-replies?type=${type}&contentId=${encodeURIComponent(contentId)}&commentId=${encodeURIComponent(commentId)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`, undefined, {
+  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(progress),
+});
 export const getQuestion = (id: string) => cookieRequest<QuestionInfo>(`/api/question?id=${encodeURIComponent(id)}`);
 export const getQuestionAnswers = (id: string, cursor?: string) => cookieRequest<QuestionAnswerPage>(`/api/question/answers?id=${encodeURIComponent(id)}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);

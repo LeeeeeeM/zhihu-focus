@@ -42,17 +42,19 @@ test('exhausted reply pagination stops even when the upstream total includes una
 });
 
 for (const total of [10, 20, 25]) {
-  test(`reply pagination stops at ${total} unique replies even when upstream advertises another page`, async () => {
+  test(`reply pagination sends progress and follows backend completion at ${total} replies`, async () => {
     const previousFetch = globalThis.fetch;
     const requests: string[] = [];
-    globalThis.fetch = async input => {
+    globalThis.fetch = async (input, init) => {
       const path = String(input);
       const page = requests.length;
+      assert.equal(init?.method, 'POST');
+      assert.deepEqual(JSON.parse(String(init?.body)), { loadedIds: Array.from({ length: page * 10 }, (_, i) => String(i + 1)), knownTotal: total });
       assert.equal(new URL(path, 'http://localhost').searchParams.get('cursor'), `page-${page}`);
       requests.push(path);
       return Response.json({
         items: Array.from({ length: Math.min(10, total - page * 10) }, (_, i) => ({ id: String(page * 10 + i + 1), content: '回复' })),
-        nextCursor: `page-${page + 1}`, hasMore: true,
+        nextCursor: (page + 1) * 10 < total ? `page-${page + 1}` : '', hasMore: (page + 1) * 10 < total, totalCount: total,
       });
     };
     useZhihuStore.setState({ contentType: 'answer', contentId: '1', comments: [{ id: '100', replyCount: total, repliesCursor: 'page-0', repliesHasMore: true } as never], commentRepliesLoading: {}, commentRepliesErrors: {} });
@@ -78,7 +80,7 @@ test('reply completion counts unique replies rather than repeated rows', async (
   globalThis.fetch = async () => {
     calls++;
     const ids = calls === 1 ? ['1', '2', '3', '4', '5', '6', '7', '8', '1', '2'] : ['9', '10'];
-    return Response.json({ items: ids.map(id => ({ id, content: '回复' })), nextCursor: `page-${calls}`, hasMore: true });
+    return Response.json({ items: ids.map(id => ({ id, content: '回复' })), nextCursor: calls === 1 ? 'page-1' : '', hasMore: calls === 1, totalCount: 10 });
   };
   useZhihuStore.setState({ contentType: 'answer', contentId: '1', comments: [{ id: '100', replyCount: 10, repliesCursor: 'page-0', repliesHasMore: true } as never], commentRepliesLoading: {}, commentRepliesErrors: {} });
   try {
@@ -97,7 +99,7 @@ test('reply pagination follows the cursor even when the initial total is stale',
   globalThis.fetch = async input => {
     requests.push(String(input));
     return requests.length === 1
-      ? Response.json({ items: Array.from({ length: 10 }, (_, i) => ({ id: String(i + 1), content: '回复' })), nextCursor: 'next-page', hasMore: true })
+      ? Response.json({ items: Array.from({ length: 10 }, (_, i) => ({ id: String(i + 1), content: '回复' })), nextCursor: 'next-page', hasMore: true, totalCount: 11 })
       : Response.json({ items: [{ id: '11', content: '新增回复' }], hasMore: false });
   };
   useZhihuStore.setState({ contentType: 'answer', contentId: '1', comments: [{ id: '100', replyCount: 3, repliesCursor: 'first-page', repliesHasMore: true } as never], commentRepliesLoading: {}, commentRepliesErrors: {} });
@@ -105,6 +107,7 @@ test('reply pagination follows the cursor even when the initial total is stale',
     await useZhihuStore.getState().loadCommentReplies('100');
     assert.equal(useZhihuStore.getState().comments[0].replies?.length, 10);
     assert.equal(useZhihuStore.getState().comments[0].repliesHasMore, true);
+    assert.equal(useZhihuStore.getState().comments[0].replyCount, 11, 'use the current reply-page total');
     await useZhihuStore.getState().loadCommentReplies('100');
     assert.equal(new URL(requests[1], 'http://localhost').searchParams.get('cursor'), 'next-page');
     assert.equal(useZhihuStore.getState().comments[0].replies?.length, 11);

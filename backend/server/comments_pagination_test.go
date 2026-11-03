@@ -59,7 +59,7 @@ func TestReplyPagesDoNotMixNonPrefixPreviews(t *testing.T) {
 			all := []Comment{}
 			for {
 				before := calls
-				page, err := getCommentReplies(context.Background(), client, "d_c0=fixture", "answer", "1", root.ID, cursor)
+				page, err := getCommentReplies(context.Background(), client, "d_c0=fixture", "answer", "1", root.ID, cursor, replyProgress{})
 				if err != nil {
 					t.Fatal(err)
 				}

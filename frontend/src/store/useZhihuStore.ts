@@ -284,21 +284,21 @@ export const useZhihuStore = create<Store>((set, get) => ({
       commentRepliesErrors: { ...state.commentRepliesErrors, [commentId]: '' },
     }));
     try {
-      const page = await zhihuService.getCommentReplies(contentType, contentId, commentId, comment.repliesCursor);
+      const page = await zhihuService.getCommentReplies(contentType, contentId, commentId, comment.repliesCursor, {
+        loadedIds: (comment.replies || []).map(reply => reply.id), knownTotal: comment.replyCount,
+      });
       set(state => {
         if (version !== contentRequestVersion || state.contentId !== contentId || state.contentType !== contentType) return {};
         const current = state.comments.find(item => item.id === commentId);
         if (!current) return {};
         const merged = mergeUnique(current.replies || [], page.items, idKey);
-        // Finish this reading snapshot when its known total is reached. If the
-        // page already exceeds that total, it is stale and must not truncate paging.
-        const reachedTotal = current.replyCount > 0 && merged.items.length === current.replyCount;
-        const paging = storedPage({ nextCursor: page.nextCursor, hasMore: page.hasMore && !reachedTotal }, current.repliesCursor);
+        const paging = storedPage(page, current.repliesCursor);
 
         return {
           comments: state.comments.map(item => item.id === commentId ? {
             ...item,
             replies: merged.items,
+            replyCount: page.totalCount !== undefined && page.totalCount >= merged.items.length ? page.totalCount : item.replyCount,
             repliesCursor: paging.cursor,
             repliesHasMore: paging.hasMore,
             repliesLoaded: true,

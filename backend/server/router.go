@@ -148,25 +148,8 @@ func newAPIHandler(cfg Config, client *http.Client) http.Handler {
 		}
 		writeJSON(w, http.StatusOK, page)
 	})
-	mux.HandleFunc("GET /api/comment-replies", func(w http.ResponseWriter, r *http.Request) {
-		cookie, ok := requireZhihuCookie(w, r, "读取评论回复需要在知简设置中配置知乎 Cookie")
-		if !ok {
-			return
-		}
-		contentType := r.URL.Query().Get("type")
-		contentID := r.URL.Query().Get("contentId")
-		commentID := r.URL.Query().Get("commentId")
-		if (contentType != "answer" && contentType != "article") || !validID(contentID) || !validID(commentID) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "无效的内容或评论 ID"})
-			return
-		}
-		page, err := getCommentReplies(r.Context(), client, cookie, contentType, contentID, commentID, r.URL.Query().Get("cursor"))
-		if err != nil {
-			apiError(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, page)
-	})
+	mux.HandleFunc("GET /api/comment-replies", commentRepliesHandler(client))
+	mux.HandleFunc("POST /api/comment-replies", commentRepliesHandler(client))
 	return withCORS(mux)
 }
 

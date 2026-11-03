@@ -97,6 +97,7 @@ type CommentPage struct {
 	Items      []Comment `json:"items"`
 	NextCursor string    `json:"nextCursor,omitempty"`
 	HasMore    bool      `json:"hasMore"`
+	TotalCount *int      `json:"totalCount,omitempty"`
 }
 type Config struct {
 	AccessSecret string
@@ -206,8 +207,12 @@ type commentResponse struct {
 }
 type commentsResponse struct {
 	Data   []commentResponse `json:"data"`
+	Counts struct {
+		TotalCounts json.RawMessage `json:"total_counts"`
+	} `json:"counts"`
 	Paging struct {
-		Next  string `json:"next"`
-		IsEnd bool   `json:"is_end"`
+		Next   string          `json:"next"`
+		IsEnd  bool            `json:"is_end"`
+		Totals json.RawMessage `json:"totals"`
 	} `json:"paging"`
 }

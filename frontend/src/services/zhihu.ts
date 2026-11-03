@@ -1,5 +1,5 @@
 import * as api from '../api/zhihu';
-import type { CommentItem, ContentType, SearchInput } from '../models/content';
+import type { CommentItem, ContentType, ReplyProgress, SearchInput } from '../models/content';
 import { displayTime } from './time';
 
 function displayComment(item: CommentItem): CommentItem {
@@ -30,8 +30,8 @@ export const zhihuService = {
     const page = await api.getContentComments(type, id, cursor);
     return { ...page, items: page.items.map(displayComment) };
   },
-  getCommentReplies: async (type: ContentType, contentId: string, commentId: string, cursor?: string) => {
-    const page = await api.getCommentReplies(type, contentId, commentId, cursor);
+  getCommentReplies: async (type: ContentType, contentId: string, commentId: string, cursor?: string, progress?: ReplyProgress) => {
+    const page = await api.getCommentReplies(type, contentId, commentId, cursor, progress);
     return { ...page, items: page.items.map(displayComment) };
   },
   getQuestion: async (id: string) => {

@@ -25,7 +25,8 @@ export type CommentItem = {
   createdAt: string; likeCount: number; replyCount: number; replies?: CommentItem[];
   repliesCursor?: string; repliesHasMore?: boolean; repliesLoaded?: boolean;
 };
-export type CommentPage = { items: CommentItem[]; nextCursor?: string; hasMore: boolean };
+export type CommentPage = { items: CommentItem[]; nextCursor?: string; hasMore: boolean; totalCount?: number };
+export type ReplyProgress = { loadedIds: string[]; knownTotal?: number };
 export type ContentType = 'answer' | 'article';
 export type ContentOpenType = ContentType | 'question';
 
