@@ -290,7 +290,10 @@ export const useZhihuStore = create<Store>((set, get) => ({
         const current = state.comments.find(item => item.id === commentId);
         if (!current) return {};
         const merged = mergeUnique(current.replies || [], page.items, idKey);
-        const paging = storedPage(page, current.repliesCursor);
+        // Finish this reading snapshot when its known total is reached. If the
+        // page already exceeds that total, it is stale and must not truncate paging.
+        const reachedTotal = current.replyCount > 0 && merged.items.length === current.replyCount;
+        const paging = storedPage({ nextCursor: page.nextCursor, hasMore: page.hasMore && !reachedTotal }, current.repliesCursor);
 
         return {
           comments: state.comments.map(item => item.id === commentId ? {

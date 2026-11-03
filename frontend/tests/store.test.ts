@@ -41,6 +41,56 @@ test('exhausted reply pagination stops even when the upstream total includes una
   } finally { globalThis.fetch = previousFetch; }
 });
 
+for (const total of [10, 20, 25]) {
+  test(`reply pagination stops at ${total} unique replies even when upstream advertises another page`, async () => {
+    const previousFetch = globalThis.fetch;
+    const requests: string[] = [];
+    globalThis.fetch = async input => {
+      const path = String(input);
+      const page = requests.length;
+      assert.equal(new URL(path, 'http://localhost').searchParams.get('cursor'), `page-${page}`);
+      requests.push(path);
+      return Response.json({
+        items: Array.from({ length: Math.min(10, total - page * 10) }, (_, i) => ({ id: String(page * 10 + i + 1), content: '回复' })),
+        nextCursor: `page-${page + 1}`, hasMore: true,
+      });
+    };
+    useZhihuStore.setState({ contentType: 'answer', contentId: '1', comments: [{ id: '100', replyCount: total, repliesCursor: 'page-0', repliesHasMore: true } as never], commentRepliesLoading: {}, commentRepliesErrors: {} });
+    try {
+      const pages = Math.ceil(total / 10);
+      for (let page = 0; page < pages; page++) {
+        await useZhihuStore.getState().loadCommentReplies('100');
+        assert.equal(requests.length, page + 1, 'one click requests exactly one page');
+        assert.equal(useZhihuStore.getState().comments[0].repliesHasMore, page + 1 < pages);
+      }
+      const comment = useZhihuStore.getState().comments[0];
+      assert.equal(comment.replies?.length, total);
+      assert.equal(comment.repliesCursor, '');
+      await useZhihuStore.getState().loadCommentReplies('100');
+      assert.equal(requests.length, pages, 'do not probe an extra empty page');
+    } finally { globalThis.fetch = previousFetch; }
+  });
+}
+
+test('reply completion counts unique replies rather than repeated rows', async () => {
+  const previousFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    const ids = calls === 1 ? ['1', '2', '3', '4', '5', '6', '7', '8', '1', '2'] : ['9', '10'];
+    return Response.json({ items: ids.map(id => ({ id, content: '回复' })), nextCursor: `page-${calls}`, hasMore: true });
+  };
+  useZhihuStore.setState({ contentType: 'answer', contentId: '1', comments: [{ id: '100', replyCount: 10, repliesCursor: 'page-0', repliesHasMore: true } as never], commentRepliesLoading: {}, commentRepliesErrors: {} });
+  try {
+    await useZhihuStore.getState().loadCommentReplies('100');
+    assert.equal(useZhihuStore.getState().comments[0].replies?.length, 8);
+    assert.equal(useZhihuStore.getState().comments[0].repliesHasMore, true);
+    await useZhihuStore.getState().loadCommentReplies('100');
+    assert.equal(useZhihuStore.getState().comments[0].replies?.length, 10);
+    assert.equal(useZhihuStore.getState().comments[0].repliesHasMore, false);
+  } finally { globalThis.fetch = previousFetch; }
+});
+
 test('reply pagination follows the cursor even when the initial total is stale', async () => {
   const previousFetch = globalThis.fetch;
   const requests: string[] = [];
